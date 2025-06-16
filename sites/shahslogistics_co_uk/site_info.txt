@@ -1,0 +1,3 @@
+domain: shahslogistics.co.uk
+company_name: Shahs Logistics
+industry: Logistics UK
