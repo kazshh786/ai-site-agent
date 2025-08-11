@@ -137,7 +137,7 @@ def _generate_code(prompt: str, component_name: str, task_id: str, available_com
         return f"// AI code generation failed for {component_name}\nexport default function FailedComponent() {{ return <div>Error loading {component_name}</div>; }}"
         
     raw_code = response_part.text
-    extracted_code = re.search(r'```(?:tsx|jsx|css|ts)?\s*\n(.*?)\n```', raw_code, re.DOTALL)
+    extracted_code = re.search(r'```(?:tsx|jsx|css|ts|typescript)?\s*\n(.*?)\n```', raw_code, re.DOTALL)
     
     # Start with the clean, extracted code
     code_to_process = extracted_code.group(1).strip() if extracted_code else raw_code.strip()
