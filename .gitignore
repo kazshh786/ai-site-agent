@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+
+# Node.js
+node_modules/
+sites/*/node_modules/
+.pnpm-store/
+
+# Next.js build output
+sites/*/.next/
+sites/*/out/
+
+# Secrets & Credentials
+.env
+*.json
+api_keys.txt
+
+# Logs & OS Files
+*.log
+.DS_Store
+
+# Backup files
+*.bak*
+*.save
+*.rej
+*.orig

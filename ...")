@@ -1,0 +1,139 @@
+import os
+from pathlib import Path
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from utils.logger import get_logger
+
+log = get_logger(__name__)
+
+# --- Helper function to validate and clean the AI-generated blueprint ---
+# This function ensures the blueprint has all expected keys with defaults.
+def _validate_and_clean_blueprint(blueprint: dict) -> dict:
+    """Ensures the AI-generated blueprint has all required keys and provides sensible defaults."""
+    log.info("Validating and cleaning AI site blueprint...")
+
+    design_system = blueprint.get('designSystem', {})
+
+    # Color Palette defaults
+    color_palette = design_system.get('colorPalette', {})
+    color_defaults = {
+        "primary": "210 40% 98%", "secondary": "215 28% 45%", "accent": "25 95% 53%",
+        "neutral": "215 16% 47%", "base": "0 0% 100%"
+    }
+    for key, value in color_defaults.items():
+        color_palette.setdefault(key, value)
+    design_system['colorPalette'] = color_palette
+
+    # Typography defaults
+    typography = design_system.get('typography', {})
+    typography.setdefault('fontPairing', 'Inter and Roboto')
+    typography.setdefault('baseSize', '16px')
+    design_system['typography'] = typography
+
+    # Style Tokens defaults
+    style_tokens = design_system.get('styleTokens', {})
+    style_tokens.setdefault('borderRadius', '0.5rem')
+    style_tokens.setdefault('shadowStyle', '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)')
+    design_system['styleTokens'] = style_tokens
+
+    blueprint['designSystem'] = design_system
+    blueprint.setdefault('pageLayout', []) # Ensure pageLayout is present
+
+    log.info("AI site blueprint validated successfully.")
+    return blueprint
+
+class FileWriter:
+    def __init__(self, base_dir="."):
+        self.base_dir = Path(base_dir)
+        self.templates_dir = Path(__file__).parent / "templates"
+        self.env = Environment(
+            loader=FileSystemLoader(self.templates_dir),
+            autoescape=select_autoescape(['html', 'xml', 'js', 'css', 'json'])
+        )
+
+    def _write_file(self, file_path: Path, content: str):
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(content)
+        log.info(f"Wrote file", extra={'file': str(file_path.relative_to(self.base_dir))})
+
+
+    def create_all_files(self, site_path: Path, site_blueprint: dict, task_id=None):
+        log.info("Writing all project files from templates...", extra={'path': str(site_path)})
+
+        # --- CRITICAL FIX: Call the validator function here! ---
+        validated_blueprint = _validate_and_clean_blueprint(site_blueprint)
+        log.info("AI site blueprint validated and cleaned in file_writer.py.")
+
+        # Create components directory if it doesn't exist
+        components_dir = site_path / 'components'
+        components_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Write globals.css
+        css_template = self.env.get_template('globals.css.j2')
+        css_content = css_template.render(design_system=validated_blueprint['designSystem'])
+        self._write_file(site_path / 'app' / 'globals.css', css_content)
+
+        # 2. Write tailwind.config.ts
+        tailwind_template = self.env.get_template('tailwind.config.ts.j2')
+        tailwind_content = tailwind_template.render(design_system=validated_blueprint['designSystem'])
+        self._write_file(site_path / 'tailwind.config.ts', tailwind_content)
+
+        # 3. Write blueprint.ts (central data file)
+        blueprint_template = self.env.get_template('components/blueprint.ts.j2')
+        blueprint_content = blueprint_template.render(blueprint=validated_blueprint)
+        self._write_file(site_path / 'components' / 'blueprint.ts', blueprint_content)
+        log.info("Wrote central data file: components/blueprint.ts")
+
+        # 4. Write static layout files (app/layout.tsx)
+        #    These do NOT need blueprint data passed as context, as they import it from components/blueprint.ts directly.
+        layout_template = self.env.get_template('app/layout.tsx.j2')
+        layout_content = layout_template.render()
+        self._write_file(site_path / 'app' / 'layout.tsx', layout_content)
+        log.info(f"Wrote static file: app/layout.tsx")
+
+
+        # 5. Write static components that DO need blueprint data passed as context
+        #    because they directly use Jinja2 variables like {{ blueprint.company_name }}.
+        static_components_with_direct_context = {
+            'components/Header.tsx': 'components/Header.tsx.j2',
+            'components/Footer.tsx': 'components/Footer.tsx.j2', # Assuming Footer might also need it
+        }
+        for dest_path_str, template_name in static_components_with_direct_context.items():
+            template = self.env.get_template(template_name)
+            # Pass the validated_blueprint here
+            content = template.render(blueprint=validated_blueprint) 
+            self._write_file(site_path / dest_path_str, content)
+            log.info(f"Wrote static file: {dest_path_str}")
+
+        # 6. Write dynamic homepage (app/page.tsx)
+        homepage_template = self.env.get_template('app/page.tsx.j2')
+        homepage_content = homepage_template.render() # Homepage uses blueprint via BlueprintRenderer
+        self._write_file(site_path / 'app' / 'page.tsx', homepage_content)
+        log.info("Wrote dynamic homepage: app/page.tsx")
+
+        # 7. Write other component files dynamically (BlueprintRenderer and generic Component)
+        component_templates = {
+            'BlueprintRenderer': 'components/BlueprintRenderer.tsx.j2',
+            # All other dynamic components will use the generic Component.tsx.j2 template
+            'HeroSection': 'components/Component.tsx.j2',
+            'FeatureGrid': 'components/Component.tsx.j2',
+            'TestimonialSlider': 'components/Component.tsx.j2',
+            'LogoCloud': 'components/Component.tsx.j2',
+            'CtaSection': 'components/Component.tsx.j2',
+        }
+
+        for component_name, template_name in component_templates.items():
+            template = self.env.get_template(template_name)
+
+            # Pass relevant data for the generic Component template if needed
+            if template_name == 'components/Component.tsx.j2':
+                content = template.render(
+                    component_name=component_name, # Pass the actual component name for generic template
+                    design=validated_blueprint['designSystem'] # Pass design system for styling
+                )
+            else: # For BlueprintRenderer.tsx.j2
+                content = template.render() 
+
+            self._write_file(site_path / 'components' / f'{component_name}.tsx', content)
+            log.info(f"Wrote component file: components/{component_name}.tsx")
+
+        log.info("Finished writing all project files.", extra={'path': str(site_path)})

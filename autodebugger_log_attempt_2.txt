@@ -1,0 +1,4 @@
+  File "/opt/agent/ai-site-agent/main.py", line 479
+    (app_dir / 'page.tsx').write_text("""
+                                      ^
+SyntaxError: unterminated triple-quoted string literal (detected at line 573)
