@@ -23,7 +23,7 @@ interface FooterNavigationProps {
  * @param {FooterNavigationProps} props - The properties for the component.
  * @param {NavItem[]} props.items - An array of navigation items, each with a label and a link.
  */
-const FooterNavigation = ({ items }: FooterNavigationProps): JSX.Element => {
+const FooterNavigation = ({ items }: FooterNavigationProps ) => {
   return (
     <nav aria-label="Footer navigation links" className="text-center md:text-left">
       <ul className="flex flex-col md:flex-row md:space-x-6 space-y-2 md:space-y-0 text-sm">
