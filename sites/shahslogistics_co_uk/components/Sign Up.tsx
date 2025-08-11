@@ -84,7 +84,8 @@ const SignUp: React.FC<SignUpProps> = ({
   // Cast onClick for Link component, as its onClick signature is more specific
   // The consumer's onClick is a simple callback, so we can pass it directly.
   const handleOnClick: MouseEventHandler<HTMLAnchorElement> | undefined = onClick
-    ? (event) => {
+    ? // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      (_event) => {
         onClick();
       }
     : undefined;

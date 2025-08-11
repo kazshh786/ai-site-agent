@@ -1,4 +1,3 @@
-```typescript
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -10,6 +9,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        border: "hsl(var(--border))",
         primary: "hsl(var(--primary))",
         secondary: "hsl(var(--secondary))",
         background: "hsl(var(--background))",
@@ -21,4 +21,3 @@ const config: Config = {
 };
 
 export default config;
-```

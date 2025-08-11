@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import Link from 'next/link';
 import React from 'react';
 
@@ -6,13 +7,18 @@ interface Component {
   component_name: string;
   props: Record<string, unknown>; // Use 'unknown' instead of 'any' for props
   id: string; // Added based on blueprint structure
+  component_type: string;
+  type: string;
+  name: string;
 }
 
 interface Section {
   section_name: string;
-  heading: string | null;
+  heading?: string | null;
   components: Component[];
   id: string; // Added based on blueprint structure
+  layout: string;
+  name: string;
 }
 
 interface Page {
@@ -20,10 +26,20 @@ interface Page {
   page_path: string;
   sections: Section[];
   id: string; // Added based on blueprint structure
+  name: string;
+  path: string;
 }
 
 // Site Blueprint Data (provided in prompt)
-const siteBlueprint: { pages: Page[] } = {
+const siteBlueprint: {
+  client_name: string;
+  pages: Page[];
+  design_system: null;
+  companyName: string;
+  industry: string;
+  type: string;
+  description: string;
+} = {
   "client_name": "Unknown",
   "pages": [
     {
@@ -1029,7 +1045,7 @@ import ShahsLogisticsLogoDashboard from '@/components/Shahs Logistics Logo (Dash
 import BillingCycleToggle from '@/components/Billing Cycle Toggle';
 import CustomerReview1 from '@/components/Customer Review 1';
 import EmailInputField from '@/components/Email Input Field';
-import FeaturesMainHeading from '@/components/Features Main Heading';
+import FeaturesMainHeading from '@/components/FeaturesMainHeading';
 import HeroSubtitle from '@/components/Hero Subtitle';
 import SocialLinks from '@/components/Social Links';
 import RealtimeTracking from '@/components/Real-time Tracking';
@@ -1090,90 +1106,90 @@ export default async function DynamicPage({ params }: PageProps) {
   const renderComponent = (component: Component) => {
     switch (component.component_name) {
       case "Footer Navigation":
-        return <FooterNavigation {...component.props} />;
+        return <FooterNavigation {...(component.props as any)} />;
       case "Route Optimization":
-        return <RouteOptimization {...component.props} />;
+        return <RouteOptimization {...(component.props as any)} />;
       case "Login":
-        return <Login {...component.props} />;
+        return <Login {...(component.props as any)} />;
       case "Login Form Heading":
-        return <LoginFormHeading {...component.props} />;
+        return <LoginFormHeading {...(component.props as any)} />;
       case "Customer Review 2":
-        return <CustomerReview2 {...component.props} />;
+        return <CustomerReview2 {...(component.props as any)} />;
       case "Forgot Password":
-        return <ForgotPassword {...component.props} />;
+        return <ForgotPassword {...(component.props as any)} />;
       case "Pricing Main Heading":
-        return <PricingMainHeading {...component.props} />;
+        return <PricingMainHeading {...(component.props as any)} />;
       case "Main Hero Heading":
-        return <MainHeroHeading {...component.props} />;
+        return <MainHeroHeading {...(component.props as any)} />;
       case "Testimonial Heading":
-        return <TestimonialHeading {...component.props} />;
+        return <TestimonialHeading {...(component.props as any)} />;
       case "Shahs Logistics Logo (Dashboard)":
-        return <ShahsLogisticsLogoDashboard {...component.props} />;
+        return <ShahsLogisticsLogoDashboard {...(component.props as any)} />;
       case "Billing Cycle Toggle":
-        return <BillingCycleToggle {...component.props} />;
+        return <BillingCycleToggle {...(component.props as any)} />;
       case "Customer Review 1":
-        return <CustomerReview1 {...component.props} />;
+        return <CustomerReview1 {...(component.props as any)} />;
       case "Email Input Field":
-        return <EmailInputField {...component.props} />;
+        return <EmailInputField {...(component.props as any)} />;
       case "Features Main Heading":
-        return <FeaturesMainHeading {...component.props} />;
+        return <FeaturesMainHeading {...(component.props as any)} />;
       case "Hero Subtitle":
-        return <HeroSubtitle {...component.props} />;
+        return <HeroSubtitle {...(component.props as any)} />;
       case "Social Links":
-        return <SocialLinks {...component.props} />;
+        return <SocialLinks {...(component.props as any)} />;
       case "Real-time Tracking":
-        return <RealtimeTracking {...component.props} />;
+        return <RealtimeTracking {...(component.props as any)} />;
       case "Live Tracking Map":
-        return <LiveTrackingMap {...component.props} />;
+        return <LiveTrackingMap {...(component.props as any)} />;
       case "User Profile":
-        return <UserProfile {...component.props} />;
+        return <UserProfile {...(component.props as any)} />;
       case "Notifications":
-        return <Notifications {...component.props} />;
+        return <Notifications {...(component.props as any)} />;
       case "Pricing Subtitle":
-        return <PricingSubtitle {...component.props} />;
+        return <PricingSubtitle {...(component.props as any)} />;
       case "Features Subtitle":
-        return <FeaturesSubtitle {...component.props} />;
+        return <FeaturesSubtitle {...(component.props as any)} />;
       case "Inventory Management":
-        return <InventoryManagement {...component.props} />;
+        return <InventoryManagement {...(component.props as any)} />;
       case "Shahs Logistics Logo":
-        return <ShahsLogisticsLogo {...component.props} />;
+        return <ShahsLogisticsLogo {...(component.props as any)} />;
       case "Total Shipments Card":
-        return <TotalShipmentsCard {...component.props} />;
+        return <TotalShipmentsCard {...(component.props as any)} />;
       case "Advanced Reporting":
-        return <AdvancedReporting {...component.props} />;
+        return <AdvancedReporting {...(component.props as any)} />;
       case "Password Input Field":
-        return <PasswordInputField {...component.props} />;
+        return <PasswordInputField {...(component.props as any)} />;
       case "Recent Shipments":
-        return <RecentShipments {...component.props} />;
+        return <RecentShipments {...(component.props as any)} />;
       case "Background Image":
-        return <BackgroundImage {...component.props} />;
+        return <BackgroundImage {...(component.props as any)} />;
       case "Sign Up":
-        return <SignUp {...component.props} />;
+        return <SignUp {...(component.props as any)} />;
       case "Illustration of Features":
-        return <IllustrationOfFeatures {...component.props} />;
+        return <IllustrationOfFeatures {...(component.props as any)} />;
       case "Main Navigation":
-        return <MainNavigation {...component.props} />;
+        return <MainNavigation {...(component.props as any)} />;
       case "Dashboard Sidebar Nav":
-        return <DashboardSidebarNav {...component.props} />;
+        return <DashboardSidebarNav {...(component.props as any)} />;
       case "Basic Plan":
-        return <BasicPlan {...component.props} />;
+        return <BasicPlan {...(component.props as any)} />;
       case "Pro Plan":
-        return <ProPlan {...component.props} />;
+        return <ProPlan {...(component.props as any)} />;
       case "Book a Demo":
-        return <BookADemo {...component.props} />;
+        return <BookADemo {...(component.props as any)} />;
       case "Copyright Info":
-        return <CopyrightInfo {...component.props} />;
+        return <CopyrightInfo {...(component.props as any)} />;
       case "Get Started":
-        return <GetStarted {...component.props} />;
+        return <GetStarted {...(component.props as any)} />;
       case "Submit Login":
-        return <SubmitLogin {...component.props} />;
+        return <SubmitLogin {...(component.props as any)} />;
       case "Dashboard Main Title":
-        return <DashboardMainTitle {...component.props} />;
+        return <DashboardMainTitle {...(component.props as any)} />;
       case "Enterprise Plan":
-        return <EnterprisePlan {...component.props} />;
+        return <EnterprisePlan {...(component.props as any)} />;
       default:
         // Use Placeholder for any unknown component names from the blueprint
-        return <Placeholder componentName={component.component_name} {...component.props} />;
+        return <Placeholder componentName={component.component_name} {...(component.props as any)} />;
     }
   };
 

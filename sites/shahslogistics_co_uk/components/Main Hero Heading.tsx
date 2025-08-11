@@ -30,10 +30,9 @@ interface MainHeroHeadingProps {
  * @param {MainHeroHeadingProps} props - The props for the component.
  * @returns {JSX.Element} A heading element with dynamic content and styling.
  */
-const MainHeroHeading: React.FC<MainHeroHeadingProps> = ({ level, text, className }) => {
+const MainHeroHeading = ({ level, text, className }: MainHeroHeadingProps) => {
   // Dynamically determine the HTML tag based on the 'level' prop.
-  // 'as keyof JSX.IntrinsicElements' asserts that 'level' will be a valid HTML tag name.
-  const Tag = level as keyof JSX.IntrinsicElements;
+  const Tag = level as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
 
   // Base Tailwind CSS classes for a hero heading.
   // These styles are chosen for impact and readability, commonly used over a background image.
