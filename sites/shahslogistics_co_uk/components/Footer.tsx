@@ -1,8 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
 
-interface FooterProps {}
-
 interface NavLinkItem {
   name: string;
   href: string;
@@ -16,7 +14,7 @@ const navLinks: NavLinkItem[] = [
   { name: 'Dashboard Page', href: '/dashboard' },
 ];
 
-const Footer: React.FC<FooterProps> = () => {
+const Footer = () => {
   const currentYear: number = new Date().getFullYear();
 
   return (

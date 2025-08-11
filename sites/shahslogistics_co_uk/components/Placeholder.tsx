@@ -34,7 +34,7 @@ export default function Placeholder({ componentName }: PlaceholderProps) {
         ></path>
       </svg>
       <p className="font-medium text-sm sm:text-base">
-        Placeholder: Failed to load component "{componentName}". Please check your configuration.
+        Placeholder: Failed to load component &quot;{componentName}&quot;. Please check your configuration.
       </p>
     </div>
   );
