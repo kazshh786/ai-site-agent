@@ -1,4 +1,3 @@
-```typescript
 import React from 'react';
 import {
   Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap
@@ -79,4 +78,3 @@ const RealTimeTracking: React.FC<RealTimeTrackingProps> = ({ heading, descriptio
 };
 
 export default RealTimeTracking;
-```

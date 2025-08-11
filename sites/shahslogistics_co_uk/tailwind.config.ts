@@ -10,6 +10,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        border: "hsl(var(--border))",
         primary: "hsl(var(--primary))",
         secondary: "hsl(var(--secondary))",
         background: "hsl(var(--background))",
