@@ -108,48 +108,50 @@ def lint_and_fix_code(code: str, component_name: str, task_id: str) -> str:
                  extra={"task_id": task_id, "component": component_name, "fixes": fixes_applied})
     return code
 
-# --- LLM Call Functions (Unchanged) ---
+# --- THIS IS THE MODIFIED FUNCTION ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def _call_general_llm(prompt: str, request_type: str, task_id: str) -> Optional[Part]:
-    log_extra = {"task_id": task_id, "request_type": request_type, "model": GENERAL_MODEL_NAME}
-    log.info(f"🧠 Requesting AI for: {request_type} (general model)", extra=log_extra)
+def _generate_code(prompt: str, component_name: str, task_id: str, available_components: Optional[List[str]] = None) -> str:
+    """
+    Generates code using the fine-tuned model and applies a validation pipeline.
+    """
+    log_extra = {"task_id": task_id, "request_type": f"generate_code:{component_name}", "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
+    log.info(f"🧠 Requesting AI for: {log_extra['request_type']} (tuned model)", extra=log_extra)
     start_time = time.time()
+
+    request = aiplatform.GenerateContentRequest(
+        model=TUNED_ENDPOINT_PATH,
+        contents=[aiplatform.Content(role="user", parts=[aiplatform.Part(text=prompt)])],
+        # Request plain text for code generation
+        generation_config=aiplatform.GenerationConfig(response_mime_type="text/plain")
+    )
+
     try:
-        model = GenerativeModel(GENERAL_MODEL_NAME)
-        response = model.generate_content(prompt)
+        response = PREDICTION_CLIENT.generate_content(request=request)
         execution_time = time.time() - start_time
-        log.info(f"✅ AI response received for: {request_type} in {execution_time:.2f}s", extra={**log_extra, "execution_time": execution_time})
+        log.info(f"✅ AI response received for: {log_extra['request_type']} in {execution_time:.2f}s", extra={**log_extra, "execution_time": execution_time})
+
         if not (response.candidates and response.candidates[0].content.parts):
-            raise ValueError("General AI model returned an empty or invalid response.")
-        return response.candidates[0].content.parts[0]
+            raise ValueError("Tuned AI model returned an empty or invalid response for code generation.")
+
+        raw_code = response.candidates[0].content.parts[0].text
+
+        # The rest of the validation pipeline remains the same
+        extracted_code = re.search(r'```(?:tsx|jsx|css|ts|typescript)?\s*\n(.*?)\n```', raw_code, re.DOTALL)
+        code_to_process = extracted_code.group(1).strip() if extracted_code else raw_code.strip()
+
+        if available_components and component_name == "DynamicPage.tsx":
+            code_to_process = validate_component_imports(code_to_process, available_components, component_name, task_id)
+
+        final_code = lint_and_fix_code(code_to_process, component_name, task_id)
+
+        return final_code
+
     except exceptions.GoogleAPICallError as e:
-        log.error(f"Google API Error calling general model: {e.message}", extra={"code": e.code, **log_extra})
+        log.error(f"Google API Error calling tuned model for code generation: {e.message}", extra={"code": e.code, **log_extra})
         raise
     except Exception as e:
-        log.error(f"An unexpected error occurred with the general model: {e}", extra=log_extra)
+        log.error(f"An unexpected error occurred with the tuned model during code generation: {e}", extra=log_extra)
         raise
-
-# --- THIS IS THE ONLY FUNCTION THAT HAS BEEN MODIFIED ---
-def _generate_code(prompt: str, component_name: str, task_id: str, available_components: Optional[List[str]] = None) -> str:
-    """Enhanced code generation with comprehensive validation pipeline."""
-    response_part = _call_general_llm(prompt, f"generate_code:{component_name}", task_id)
-    if not response_part or not hasattr(response_part, 'text'):
-        return f"// AI code generation failed for {component_name}\nexport default function FailedComponent() {{ return <div>Error loading {component_name}</div>; }}"
-        
-    raw_code = response_part.text
-    extracted_code = re.search(r'```(?:tsx|jsx|css|ts|typescript)?\s*\n(.*?)\n```', raw_code, re.DOTALL)
-    
-    # Start with the clean, extracted code
-    code_to_process = extracted_code.group(1).strip() if extracted_code else raw_code.strip()
-    
-    # Apply import validation FIRST, and pass its result to the next step
-    if available_components and component_name == "DynamicPage.tsx":
-        code_to_process = validate_component_imports(code_to_process, available_components, component_name, task_id)
-    
-    # Apply linting fixes to the (potentially modified) code
-    final_code = lint_and_fix_code(code_to_process, component_name, task_id)
-    
-    return final_code
 
 # --- Blueprint and Component Generation Functions (Unchanged) ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -268,11 +270,48 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     **CRITICAL INSTRUCTIONS:**
     1.  **TypeScript:**
         - **NEVER use the `any` type.**
-        - You MUST import the `Config` type from tailwindcss: `import type {{ Config }} from "tailwindcss";`
-        - You MUST define the config object with this type: `const config: Config = {{ ... }}`
+        - You MUST import the `Config` type from tailwindcss: `import type { Config } from "tailwindcss";`
+        - You MUST define the config object with this type: `const config: Config = { ... }`
     2.  **Configuration:**
-        - Use CSS variables for all theme colors (e.g., `background: 'hsl(var(--background))'`).
-        - Only use these CSS variables for colors: `--primary`, `--secondary`, `--background`, `--foreground`.
+        - You MUST extend the Tailwind theme to use CSS variables for colors.
+        - The `colors` object in the theme should look EXACTLY like this, using HSL variables:
+          ```typescript
+          colors: {
+            border: 'hsl(var(--border))',
+            input: 'hsl(var(--input))',
+            ring: 'hsl(var(--ring))',
+            background: 'hsl(var(--background))',
+            foreground: 'hsl(var(--foreground))',
+            primary: {
+              DEFAULT: 'hsl(var(--primary))',
+              foreground: 'hsl(var(--primary-foreground))',
+            },
+            secondary: {
+              DEFAULT: 'hsl(var(--secondary))',
+              foreground: 'hsl(var(--secondary-foreground))',
+            },
+            destructive: {
+              DEFAULT: 'hsl(var(--destructive))',
+              foreground: 'hsl(var(--destructive-foreground))',
+            },
+            muted: {
+              DEFAULT: 'hsl(var(--muted))',
+              foreground: 'hsl(var(--muted-foreground))',
+            },
+            accent: {
+              DEFAULT: 'hsl(var(--accent))',
+              foreground: 'hsl(var(--accent-foreground))',
+            },
+            popover: {
+              DEFAULT: 'hsl(var(--popover))',
+              foreground: 'hsl(var(--popover-foreground))',
+            },
+            card: {
+              DEFAULT: 'hsl(var(--card))',
+              foreground: 'hsl(var(--card-foreground))',
+            },
+          }
+          ```
         - Configure the `content` array for the `app` and `components` directories.
         - Include the `tailwindcss-animate` plugin.
     3.  **Output:** Only output raw TypeScript code in a single ```ts code block.
