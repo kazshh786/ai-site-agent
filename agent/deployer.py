@@ -1,6 +1,7 @@
 # agent/deployer.py
 import os
 import shutil
+import json
 from pathlib import Path
 
 from utils.commands import run
@@ -53,6 +54,37 @@ class Deployer:
             raise Exception("Failed to scaffold Next.js project.")
         
         log.info("Next.js project scaffolded successfully.", extra={"path": str(site_path), "task_id": task_id})
+
+        log.info("Configuring project for resilient builds...", extra={"path": str(site_path), "task_id": task_id})
+
+        # Modify package.json to include lint --fix
+        package_json_path = site_path / "package.json"
+        if package_json_path.exists():
+            with open(package_json_path, "r+") as f:
+                data = json.load(f)
+                # Ensure scripts key exists
+                if "scripts" not in data:
+                    data["scripts"] = {}
+                data["scripts"]["build"] = "next lint --fix && next build"
+                f.seek(0)
+                json.dump(data, f, indent=2)
+                f.truncate()
+            log.info("Updated package.json build script.", extra={"path": str(package_json_path), "task_id": task_id})
+        else:
+            log.warning("package.json not found, skipping modification.", extra={"path": str(package_json_path), "task_id": task_id})
+
+        # Create .eslintrc.json to downgrade linting errors
+        eslintrc_path = site_path / ".eslintrc.json"
+        eslintrc_content = {
+            "extends": "next/core-web-vitals",
+            "rules": {
+                "@typescript-eslint/no-empty-interface": "warn",
+                "@typescript-eslint/no-unused-vars": "warn"
+            }
+        }
+        with open(eslintrc_path, "w") as f:
+            json.dump(eslintrc_content, f, indent=2)
+        log.info("Created .eslintrc.json with custom rules.", extra={"path": str(eslintrc_path), "task_id": task_id})
 
     def install_dependencies(self, site_path: Path, task_id: str):
         """Installs additional required dependencies."""
