@@ -85,12 +85,29 @@ def create_website_task(
         # 4. Generate and Write ALL Component Files with AI
         logger.info("✍️ Generating all site files with AI...", extra=task_ctx)
         
-        file_writer.write_file(site_path / "app/layout.tsx", get_layout_code(blueprint, task_id=self.request.id))
-        file_writer.write_file(site_path / "app/globals.css", get_globals_css_code(blueprint, task_id=self.request.id))
-        file_writer.write_file(site_path / "tailwind.config.ts", get_tailwind_config_code(blueprint, task_id=self.request.id))
-        file_writer.write_file(site_path / "components/Header.tsx", get_header_code(blueprint, task_id=self.request.id))
-        file_writer.write_file(site_path / "components/Footer.tsx", get_footer_code(blueprint, task_id=self.request.id))
-        file_writer.write_file(site_path / "components/Placeholder.tsx", get_placeholder_code(task_id=self.request.id))
+        layout_result = file_writer.write_file(site_path / "app/layout.tsx", get_layout_code(blueprint, task_id=self.request.id))
+        if not layout_result.success:
+            raise Exception(f"Failed to write layout.tsx: {layout_result.error}")
+
+        css_result = file_writer.write_file(site_path / "app/globals.css", get_globals_css_code(blueprint, task_id=self.request.id))
+        if not css_result.success:
+            raise Exception(f"Failed to write globals.css: {css_result.error}")
+
+        tailwind_result = file_writer.write_file(site_path / "tailwind.config.ts", get_tailwind_config_code(blueprint, task_id=self.request.id))
+        if not tailwind_result.success:
+            raise Exception(f"Failed to write tailwind.config.ts: {tailwind_result.error}")
+
+        header_result = file_writer.write_file(site_path / "components/Header.tsx", get_header_code(blueprint, task_id=self.request.id))
+        if not header_result.success:
+            raise Exception(f"Failed to write Header.tsx: {header_result.error}")
+
+        footer_result = file_writer.write_file(site_path / "components/Footer.tsx", get_footer_code(blueprint, task_id=self.request.id))
+        if not footer_result.success:
+            raise Exception(f"Failed to write Footer.tsx: {footer_result.error}")
+
+        placeholder_result = file_writer.write_file(site_path / "components/Placeholder.tsx", get_placeholder_code(task_id=self.request.id))
+        if not placeholder_result.success:
+            raise Exception(f"Failed to write Placeholder.tsx: {placeholder_result.error}")
 
         # CORRECTED: Updated the logic to iterate through the new, more detailed blueprint structure.
         unique_components = set()

@@ -214,6 +214,7 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
         - Use `<Link href="...">` for internal navigation.
         - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
         - Add `"use client";` at the top ONLY if you use hooks like `useState`.
+        - **NEVER place JSX comments inside the opening tag of a component.** Place them on the line above.
     6.  **Output:** Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
     """
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
