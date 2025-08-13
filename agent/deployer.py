@@ -73,6 +73,12 @@ class Deployer:
         else:
             log.warning("package.json not found, skipping modification.", extra={"path": str(package_json_path), "task_id": task_id})
 
+        # Remove default eslint config if it exists, to ensure our config is used
+        default_eslint_config = site_path / "eslint.config.mjs"
+        if default_eslint_config.exists():
+            default_eslint_config.unlink()
+            log.info("Removed default eslint.config.mjs.", extra={"path": str(default_eslint_config), "task_id": task_id})
+
         # Create .eslintrc.json to downgrade linting errors
         eslintrc_path = site_path / ".eslintrc.json"
         eslintrc_content = {
