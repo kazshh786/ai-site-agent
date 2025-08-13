@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Iterable, Tuple, Optional, Union, List, Dict, Set
 from queue import Queue, Empty
 from dataclasses import dataclass
+from logger import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 @dataclass
 class CommandResult:
@@ -25,8 +26,7 @@ class CommandResult:
 class ProgressTracker:
     """Track and log progress indicators."""
 
-    def __init__(self, task_id: str):
-        self.task_id = task_id
+    def __init__(self):
         self.patterns = {
             'npm_install': {
                 'indicators': ['Installing dependencies:', 'Progress:', 'Done in'],
@@ -92,7 +92,6 @@ class ProgressTracker:
 def run(
     command: Union[str, Iterable[str]],
     cwd: Optional[Path] = None,
-    task_id: Optional[str] = None,
     env: Optional[Dict[str, str]] = None,
     timeout: Optional[int] = None,
     log_progress: bool = True,
@@ -106,7 +105,6 @@ def run(
     Args:
         command: The command to run as a string or list of arguments.
         cwd: The working directory for the command.
-        task_id: The ID of the Celery task for logging context.
         env: A dictionary of environment variables.
         timeout: The timeout in seconds for the command.
         log_progress: Whether to log progress indicators.
@@ -127,7 +125,7 @@ def run(
         cmd_list = shlex.split(command)
 
     # Initialize progress tracker
-    progress_tracker = ProgressTracker(task_id or "unknown")
+    progress_tracker = ProgressTracker()
     command_type = progress_tracker.detect_command_type(cmd_str)
 
     # Enhanced command start logging
@@ -137,7 +135,6 @@ def run(
             "command": cmd_str,
             "command_type": command_type,
             "cwd": str(cwd) if cwd else None,
-            "task_id": task_id,
             "timeout": timeout
         },
     )
@@ -191,7 +188,6 @@ def run(
                     f"{prefix}{clean_line}",
                     extra={
                         "source": stream_name,
-                        "task_id": task_id,
                         "command_type": command_type,
                         "category": analysis['category']
                     }
@@ -232,7 +228,6 @@ def run(
                 "command": cmd_str,
                 "return_code": return_code,
                 "execution_time": execution_time,
-                "task_id": task_id,
                 "success": is_success,
                 "command_type": command_type,
                 "stdout_lines": len(stdout_lines),
@@ -247,7 +242,6 @@ def run(
                 extra={
                     "return_code": return_code,
                     "execution_time": execution_time,
-                    "task_id": task_id,
                     "last_stdout": stdout_lines[-3:] if stdout_lines else [],
                     "last_stderr": stderr_lines[-3:] if stderr_lines else []
                 }
@@ -273,7 +267,6 @@ def run(
                 "command": cmd_str,
                 "timeout": timeout,
                 "execution_time": execution_time,
-                "task_id": task_id
             },
         )
         return CommandResult(
@@ -292,7 +285,6 @@ def run(
             extra={
                 "command": cmd_str,
                 "execution_time": execution_time,
-                "task_id": task_id,
                 "error": str(e)
             },
         )
@@ -310,13 +302,11 @@ def run(
 def run_npm_command(
     command: Union[str, List[str]],
     cwd: Optional[Path] = None,
-    task_id: Optional[str] = None,
     **kwargs) -> CommandResult:
     """Run npm/pnpm commands with optimized logging."""
     return run(
         command,
         cwd=cwd,
-        task_id=task_id,
         suppress_output=True,  # Suppress verbose npm output
         **kwargs
     )
@@ -324,13 +314,11 @@ def run_npm_command(
 def run_build_command(
     command: Union[str, List[str]],
     cwd: Optional[Path] = None,
-    task_id: Optional[str] = None,
     **kwargs) -> CommandResult:
     """Run build commands with detailed progress tracking."""
     return run(
         command,
         cwd=cwd,
-        task_id=task_id,
         log_progress=True,
         **kwargs
     )
@@ -338,13 +326,11 @@ def run_build_command(
 def run_deployment_command(
     command: Union[str, List[str]],
     cwd: Optional[Path] = None,
-    task_id: Optional[str] = None,
     **kwargs) -> CommandResult:
     """Run deployment commands with enhanced error reporting."""
     return run(
         command,
         cwd=cwd,
-        task_id=task_id,
         log_progress=True,
         **kwargs
     )
