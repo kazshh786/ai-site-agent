@@ -101,8 +101,15 @@ class Deployer:
     def install_dependencies(self, site_path: Path, task_id: str):
         """Installs additional required dependencies."""
         log.info("Installing additional dependencies...", extra={"path": str(site_path), "task_id": task_id})
-        cmd = ["pnpm", "add", "@headlessui/react", "lucide-react", "tailwindcss-animate"]
         
+        # Install ESLint plugins to support custom rules
+        dev_cmd = ["pnpm", "add", "-D", "@typescript-eslint/eslint-plugin", "@typescript-eslint/parser"]
+        dev_result = run(dev_cmd, cwd=str(site_path), task_id=task_id)
+        if not dev_result.success:
+            raise Exception("Failed to install ESLint dev dependencies.")
+
+        # Install regular dependencies
+        cmd = ["pnpm", "add", "@headlessui/react", "lucide-react", "tailwindcss-animate"]
         result = run(cmd, cwd=str(site_path), task_id=task_id)
         if not result.success:
             raise Exception("Failed to install additional dependencies.")
