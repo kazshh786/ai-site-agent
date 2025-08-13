@@ -237,7 +237,9 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
         - Import and render the `Header` and `Footer` components.
         - The `Header` must be right after the `<body>` tag.
         - The `Footer` must be at the end, before the closing `</body>` tag.
-    3.  **Imports:** Use the `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`).
+    3.  **Imports:**
+        - Use the `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`).
+        - Import the global stylesheet using the correct relative path: `import './globals.css';`
     4.  **Font:** The font should be '{font_family}'.
     5.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
