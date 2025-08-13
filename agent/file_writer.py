@@ -1,10 +1,10 @@
-# agent/file_writer.py
 import os
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
-from utils.logger import get_logger
+from contextlib import contextmanager
+from logger import get_logger, start_span, finish_span
 
 log = get_logger(__name__)
 
@@ -41,7 +41,7 @@ class FileWriteStats:
             if result.file_type:
                 self.file_types[result.file_type] = self.file_types.get(result.file_type, 0) + 1
     
-    def log_summary(self, task_id: Optional[str] = None):
+    def log_summary(self):
         """Log a summary of file writing operations."""
         duration = time.time() - self.start_time
         
@@ -49,7 +49,6 @@ class FileWriteStats:
             f"📁 File writing summary: {self.files_written} files, "
             f"{self.total_bytes:,} bytes, {self.total_lines:,} lines in {duration:.2f}s",
             extra={
-                "task_id": task_id,
                 "files_written": self.files_written,
                 "total_bytes": self.total_bytes,
                 "total_lines": self.total_lines,
@@ -65,25 +64,34 @@ class FileWriter:
     Enhanced with comprehensive logging, security checks, and statistics tracking.
     """
     
-    def __init__(self, base_dir=".", task_id: Optional[str] = None):
+    def __init__(self, base_dir="."):
         self.base_dir = Path(base_dir).resolve()
-        self.task_id = task_id
         self.stats = FileWriteStats()
         
         if not self.base_dir.exists():
             log.warning(
                 f"⚠️  Base directory does not exist, will be created: {self.base_dir}",
-                extra={"base_dir": str(self.base_dir), "task_id": task_id}
+                extra={"base_dir": str(self.base_dir)}
             )
         
         log.info(
             f"📝 FileWriter initialized",
             extra={
                 "base_dir": str(self.base_dir),
-                "base_dir_exists": self.base_dir.exists(),
-                "task_id": task_id
+                "base_dir_exists": self.base_dir.exists()
             }
         )
+
+    @contextmanager
+    def _span(self, operation_name: str, **tags):
+        """Context manager for automatic span lifecycle"""
+        start_span(operation_name, **tags)
+        try:
+            yield
+            finish_span(success=True)
+        except Exception as e:
+            finish_span(success=False, error=str(e))
+            raise
     
     def _get_file_type(self, file_path: Path) -> str:
         """Determine file type from extension."""
@@ -150,8 +158,7 @@ class FileWriter:
             extra={
                 "operation": operation, "file_path": str(file_path),
                 "relative_path": str(relative_path), "file_type": file_type,
-                "size_bytes": file_size, "line_count": line_count,
-                "task_id": self.task_id
+                "size_bytes": file_size, "line_count": line_count
             }
         )
     
@@ -159,136 +166,124 @@ class FileWriter:
         """
         Enhanced file writing with comprehensive logging and error handling.
         """
-        start_time = time.time()
-        file_type = self._get_file_type(file_path)
-        
-        try:
-            is_valid, error_msg = self._validate_path_security(file_path)
-            if not is_valid:
+        with self._span("write_file", file_path=str(file_path), overwrite=overwrite):
+            start_time = time.time()
+            file_type = self._get_file_type(file_path)
+            
+            try:
+                is_valid, error_msg = self._validate_path_security(file_path)
+                if not is_valid:
+                    log.error(
+                        f"🚨 SECURITY VIOLATION: {error_msg}",
+                        extra={
+                            "file_path": str(file_path), "security_error": error_msg
+                        }
+                    )
+                    return FileWriteResult(
+                        success=False, file_path=file_path, relative_path=str(file_path),
+                        size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
+                        error=f"Security violation: {error_msg}", file_type=file_type
+                    )
+
+                abs_path = file_path.resolve()
+                relative_path = abs_path.relative_to(self.base_dir)
+
+                if abs_path.exists() and not overwrite:
+                    log.warning(
+                        f"⚠️  File exists, skipping: {relative_path}",
+                        extra={
+                            "file_path": str(abs_path), "relative_path": str(relative_path)
+                        }
+                    )
+                    return FileWriteResult(
+                        success=False, file_path=abs_path, relative_path=str(relative_path),
+                        size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
+                        error="File exists and overwrite=False", file_type=file_type
+                    )
+
+                if not abs_path.parent.exists():
+                    abs_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.stats.directories_created.add(str(abs_path.parent))
+                    log.info(
+                        f"📁 Created directory: {abs_path.parent.relative_to(self.base_dir)}",
+                        extra={"directory": str(abs_path.parent)}
+                    )
+
+                abs_path.write_text(content, encoding='utf-8')
+
+                size_bytes = len(content.encode('utf-8'))
+                lines_written = content.count('\n') + (1 if content and not content.endswith('\n') else 0)
+                execution_time = time.time() - start_time
+
+                self._log_file_details(abs_path, content, "wrote")
+
+                result = FileWriteResult(
+                    success=True, file_path=abs_path, relative_path=str(relative_path),
+                    size_bytes=size_bytes, lines_written=lines_written,
+                    execution_time=execution_time, file_type=file_type
+                )
+
+                self.stats.add_file(result)
+                return result
+
+            except PermissionError as e:
+                error_msg = f"Permission denied writing to {file_path}: {str(e)}"
                 log.error(
-                    f"🚨 SECURITY VIOLATION: {error_msg}",
-                    extra={
-                        "file_path": str(file_path), "security_error": error_msg,
-                        "task_id": self.task_id
-                    }
+                    f"🔒 Permission denied: {file_path}",
+                    extra={"file_path": str(file_path), "error": str(e)}
                 )
-                return FileWriteResult(
-                    success=False, file_path=file_path, relative_path=str(file_path),
-                    size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
-                    error=f"Security violation: {error_msg}", file_type=file_type
+                raise e
+
+            except OSError as e:
+                error_msg = f"OS error writing to {file_path}: {str(e)}"
+                log.error(
+                    f"💾 OS error writing file: {file_path}",
+                    extra={"file_path": str(file_path), "error": str(e), "error_type": "OSError"}
                 )
-            
-            abs_path = file_path.resolve()
-            relative_path = abs_path.relative_to(self.base_dir)
-            
-            if abs_path.exists() and not overwrite:
-                log.warning(
-                    f"⚠️  File exists, skipping: {relative_path}",
-                    extra={
-                        "file_path": str(abs_path), "relative_path": str(relative_path),
-                        "task_id": self.task_id
-                    }
+                raise e
+
+            except Exception as e:
+                error_msg = f"Unexpected error writing to {file_path}: {str(e)}"
+                log.exception(
+                    f"💥 Unexpected error writing file: {file_path}",
+                    extra={"file_path": str(file_path), "error": str(e), "error_type": type(e).__name__}
                 )
-                return FileWriteResult(
-                    success=False, file_path=abs_path, relative_path=str(relative_path),
-                    size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
-                    error="File exists and overwrite=False", file_type=file_type
-                )
-            
-            if not abs_path.parent.exists():
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                self.stats.directories_created.add(str(abs_path.parent))
-                log.info(
-                    f"📁 Created directory: {abs_path.parent.relative_to(self.base_dir)}",
-                    extra={"directory": str(abs_path.parent), "task_id": self.task_id}
-                )
-            
-            abs_path.write_text(content, encoding='utf-8')
-            
-            size_bytes = len(content.encode('utf-8'))
-            lines_written = content.count('\n') + (1 if content and not content.endswith('\n') else 0)
-            execution_time = time.time() - start_time
-            
-            self._log_file_details(abs_path, content, "wrote")
-            
-            result = FileWriteResult(
-                success=True, file_path=abs_path, relative_path=str(relative_path),
-                size_bytes=size_bytes, lines_written=lines_written,
-                execution_time=execution_time, file_type=file_type
-            )
-            
-            self.stats.add_file(result)
-            return result
-            
-        except PermissionError as e:
-            error_msg = f"Permission denied writing to {file_path}: {str(e)}"
-            log.error(
-                f"🔒 Permission denied: {file_path}",
-                extra={"file_path": str(file_path), "error": str(e), "task_id": self.task_id}
-            )
-            return FileWriteResult(
-                success=False, file_path=file_path, relative_path=str(file_path),
-                size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
-                error=error_msg, file_type=file_type
-            )
-            
-        except OSError as e:
-            error_msg = f"OS error writing to {file_path}: {str(e)}"
-            log.error(
-                f"💾 OS error writing file: {file_path}",
-                extra={"file_path": str(file_path), "error": str(e), "error_type": "OSError", "task_id": self.task_id}
-            )
-            return FileWriteResult(
-                success=False, file_path=file_path, relative_path=str(file_path),
-                size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
-                error=error_msg, file_type=file_type
-            )
-            
-        except Exception as e:
-            error_msg = f"Unexpected error writing to {file_path}: {str(e)}"
-            log.exception(
-                f"💥 Unexpected error writing file: {file_path}",
-                extra={"file_path": str(file_path), "error": str(e), "error_type": type(e).__name__, "task_id": self.task_id}
-            )
-            return FileWriteResult(
-                success=False, file_path=file_path, relative_path=str(file_path),
-                size_bytes=0, lines_written=0, execution_time=time.time() - start_time,
-                error=error_msg, file_type=file_type
-            )
+                raise e
     
     def write_files_batch(self, files: Dict[Path, str], overwrite: bool = True) -> List[FileWriteResult]:
         """
         Write multiple files in batch with progress tracking.
         """
-        log.info(
-            f"📦 Starting batch file write: {len(files)} files",
-            extra={"file_count": len(files), "task_id": self.task_id}
-        )
-        
-        results = []
-        successful = 0
-        failed = 0
-        
-        for i, (file_path, content) in enumerate(files.items(), 1):
+        with self._span("write_files_batch", file_count=len(files), overwrite=overwrite):
             log.info(
-                f"⏳ Writing file {i}/{len(files)}: {file_path.name}",
-                extra={"progress": f"{i}/{len(files)}", "file_name": file_path.name, "task_id": self.task_id}
+                f"📦 Starting batch file write: {len(files)} files",
+                extra={"file_count": len(files)}
             )
             
-            result = self.write_file(file_path, content, overwrite)
-            results.append(result)
+            results = []
+            successful = 0
+            failed = 0
             
-            if result.success:
-                successful += 1
-            else:
-                failed += 1
-        
-        log.info(
-            f"✅ Batch write complete: {successful} successful, {failed} failed",
-            extra={"total_files": len(files), "successful": successful, "failed": failed, "task_id": self.task_id}
-        )
-        
-        return results
+            for i, (file_path, content) in enumerate(files.items(), 1):
+                log.info(
+                    f"⏳ Writing file {i}/{len(files)}: {file_path.name}",
+                    extra={"progress": f"{i}/{len(files)}", "file_name": file_path.name}
+                )
+
+                result = self.write_file(file_path, content, overwrite)
+                results.append(result)
+
+                if result.success:
+                    successful += 1
+                else:
+                    failed += 1
+
+            log.info(
+                f"✅ Batch write complete: {successful} successful, {failed} failed",
+                extra={"total_files": len(files), "successful": successful, "failed": failed}
+            )
+
+            return results
     
     def get_stats_summary(self) -> Dict[str, Any]:
         """Get current statistics summary."""
@@ -301,4 +296,4 @@ class FileWriter:
     
     def log_final_summary(self):
         """Log final statistics summary."""
-        self.stats.log_summary(self.task_id)
+        self.stats.log_summary()
