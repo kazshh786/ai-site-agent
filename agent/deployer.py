@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 from utils.commands import run
 from .deployer_logger import DeployerLogger
-from logger import start_trace, start_span, finish_span
+from logger import start_span, finish_span
 from utils.metrics import metrics
 
 # Using your deployment constants
@@ -38,196 +38,165 @@ class Deployer:
             metrics.timing(f"deployment.{operation_name}", time.time() - start_time, success="false", **tags)
             raise
 
-    def deploy(self, domain: str, email: str, force: bool = False):
-        """
-        Main deployment method that orchestrates the entire process with tracing and metrics.
-        """
-        start_time = time.time()
-        start_trace("deployment", domain=domain, email=email)
-        metrics.counter("deployments.started", domain=domain)
-        success = False
-        try:
-            with self._span("create_project_directory", domain=domain, force=force):
-                site_path = self._create_project_directory(domain, force)
-
-            with self._span("scaffold_project", site_path=str(site_path)):
-                self._scaffold_project(site_path)
-
-            with self._span("install_dependencies", site_path=str(site_path)):
-                self._install_dependencies(site_path)
-
-            with self._span("build_and_deploy", site_path=str(site_path)):
-                self._build_and_deploy(site_path, domain, email)
-
-            with self._span("verify_deployment", domain=domain):
-                self._verify_deployment(domain)
-
-            finish_span(success=True, deployed_url=f"https://{domain}")
-            metrics.counter("deployments.succeeded", domain=domain)
-            success = True
-
-        except Exception as e:
-            finish_span(success=False, error=str(e))
-            metrics.counter("deployments.failed", domain=domain, error_type=type(e).__name__)
-            # Re-raise the exception to be handled by the caller
-            raise
-        finally:
-            total_duration = time.time() - start_time
-            metrics.timing("deployment.total_duration", total_duration, domain=domain)
-            DeployerLogger.log_final_summary(success, total_duration, domain)
-
-    def _create_project_directory(self, domain: str, force: bool) -> Path:
+    def create_project_directory(self, domain: str, force: bool) -> Path:
         """Creates a clean directory for the new website project."""
-        start_time = time.time()
-        DeployerLogger.log_step_start("Create Project Directory", 1, 5)
-        site_path = Path(f"/opt/agent/ai-site-agent/sites/{domain.replace('.', '_')}").resolve()
+        with self._span("create_project_directory", domain=domain, force=force):
+            start_time = time.time()
+            DeployerLogger.log_step_start("Create Project Directory", 1, 5)
+            site_path = Path(f"/opt/agent/ai-site-agent/sites/{domain.replace('.', '_')}").resolve()
 
-        if site_path.exists():
-            if force:
-                DeployerLogger.log_warning("directory.exists_force", f"Directory {site_path} exists. --force specified, removing directory.")
-                shutil.rmtree(site_path)
-            else:
-                DeployerLogger.log_error("directory.exists_no_force", f"Directory {site_path} already exists. Use --force to overwrite.")
-                raise FileExistsError(f"Directory {site_path} already exists. Use --force to overwrite.")
-        
-        site_path.mkdir(parents=True, exist_ok=True)
-        DeployerLogger.log_info("directory.created", f"Created clean directory: {site_path}", extra={"path": str(site_path)})
-        DeployerLogger.log_step_end("Create Project Directory", start_time, True)
-        return site_path
+            if site_path.exists():
+                if force:
+                    DeployerLogger.log_warning("directory.exists_force", f"Directory {site_path} exists. --force specified, removing directory.")
+                    shutil.rmtree(site_path)
+                else:
+                    DeployerLogger.log_error("directory.exists_no_force", f"Directory {site_path} already exists. Use --force to overwrite.")
+                    raise FileExistsError(f"Directory {site_path} already exists. Use --force to overwrite.")
 
-    def _scaffold_project(self, site_path: Path):
+            site_path.mkdir(parents=True, exist_ok=True)
+            DeployerLogger.log_info("directory.created", f"Created clean directory: {site_path}", extra={"path": str(site_path)})
+            DeployerLogger.log_step_end("Create Project Directory", start_time, True)
+            return site_path
+
+    def scaffold_project(self, site_path: Path):
         """Runs create-next-app and configures the base project."""
-        start_time = time.time()
-        DeployerLogger.log_step_start("Scaffold and Configure Project", 2, 5)
-        DeployerLogger.log_resource_usage("before_scaffold")
+        with self._span("scaffold_project", site_path=str(site_path)):
+            start_time = time.time()
+            DeployerLogger.log_step_start("Scaffold and Configure Project", 2, 5)
+            DeployerLogger.log_resource_usage("before_scaffold")
 
-        cmd = [
-            "pnpx", "create-next-app@latest", ".",
-            "--typescript", "--eslint", "--tailwind", "--app",
-            "--no-src-dir", "--import-alias", "@/*", "--yes"
-        ]
-        
-        result = run(cmd, cwd=str(site_path))
-        DeployerLogger.log_command_result(result, "scaffold_next_app")
-        if not result.success:
-            raise Exception("Failed to scaffold Next.js project.")
-        
-        # --- Configuration Steps ---
-        DeployerLogger.log_info("project.configure.start", "Configuring project for resilient builds...")
+            cmd = [
+                "pnpx", "create-next-app@latest", ".",
+                "--typescript", "--eslint", "--tailwind", "--app",
+                "--no-src-dir", "--import-alias", "@/*", "--yes"
+            ]
 
-        # Modify package.json
-        package_json_path = site_path / "package.json"
-        if package_json_path.exists():
-            with open(package_json_path, "r+") as f:
-                data = json.load(f)
-                data["scripts"]["build"] = "next lint --fix && next build"
-                f.seek(0)
-                json.dump(data, f, indent=2)
-                f.truncate()
-            DeployerLogger.log_info("project.configure.package_json", "Updated package.json build script.")
+            result = run(cmd, cwd=str(site_path))
+            DeployerLogger.log_command_result(result, "scaffold_next_app")
+            if not result.success:
+                raise Exception("Failed to scaffold Next.js project.")
 
-        # Manage ESLint config
-        default_eslint_config = site_path / "eslint.config.mjs"
-        if default_eslint_config.exists():
-            default_eslint_config.unlink()
-            DeployerLogger.log_info("project.configure.eslint_cleanup", "Removed default eslint.config.mjs.")
+            # --- Configuration Steps ---
+            DeployerLogger.log_info("project.configure.start", "Configuring project for resilient builds...")
 
-        eslintrc_path = site_path / ".eslintrc.json"
-        eslintrc_content = {
-            "extends": "next/core-web-vitals",
-            "rules": {
-                "@typescript-eslint/no-empty-interface": "warn",
-                "@typescript-eslint/no-unused-vars": "warn"
+            # Modify package.json
+            package_json_path = site_path / "package.json"
+            if package_json_path.exists():
+                with open(package_json_path, "r+") as f:
+                    data = json.load(f)
+                    data["scripts"]["build"] = "next lint --fix && next build"
+                    f.seek(0)
+                    json.dump(data, f, indent=2)
+                    f.truncate()
+                DeployerLogger.log_info("project.configure.package_json", "Updated package.json build script.")
+
+            # Manage ESLint config
+            default_eslint_config = site_path / "eslint.config.mjs"
+            if default_eslint_config.exists():
+                default_eslint_config.unlink()
+                DeployerLogger.log_info("project.configure.eslint_cleanup", "Removed default eslint.config.mjs.")
+
+            eslintrc_path = site_path / ".eslintrc.json"
+            eslintrc_content = {
+                "extends": "next/core-web-vitals",
+                "rules": {
+                    "@typescript-eslint/no-empty-interface": "warn",
+                    "@typescript-eslint/no-unused-vars": "warn"
+                }
             }
-        }
-        with open(eslintrc_path, "w") as f:
-            json.dump(eslintrc_content, f, indent=2)
-        DeployerLogger.log_info("project.configure.eslint_custom", "Created .eslintrc.json with custom rules.")
+            with open(eslintrc_path, "w") as f:
+                json.dump(eslintrc_content, f, indent=2)
+            DeployerLogger.log_info("project.configure.eslint_custom", "Created .eslintrc.json with custom rules.")
 
-        DeployerLogger.log_resource_usage("after_scaffold")
-        DeployerLogger.log_step_end("Scaffold and Configure Project", start_time, True)
+            DeployerLogger.log_resource_usage("after_scaffold")
+            DeployerLogger.log_step_end("Scaffold and Configure Project", start_time, True)
 
-    def _install_dependencies(self, site_path: Path):
+    def install_dependencies(self, site_path: Path):
         """Installs all required dependencies in a single, clean step."""
-        start_time = time.time()
-        DeployerLogger.log_step_start("Install Dependencies", 3, 5)
-        DeployerLogger.log_resource_usage("before_install")
+        with self._span("install_dependencies", site_path=str(site_path)):
+            start_time = time.time()
+            DeployerLogger.log_step_start("Install Dependencies", 3, 5)
+            DeployerLogger.log_resource_usage("before_install")
 
-        package_json_path = site_path / "package.json"
-        if package_json_path.exists():
-            with open(package_json_path, "r+") as f:
-                data = json.load(f)
-                data.setdefault("dependencies", {})
-                data.setdefault("devDependencies", {})
-                data["dependencies"].update({
-                    "@headlessui/react": "^2.2.7",
-                    "lucide-react": "^0.539.0",
-                    "tailwindcss-animate": "^1.0.7"
-                })
-                data["devDependencies"].update({
-                    "@typescript-eslint/eslint-plugin": "^8.0.0",
-                    "@typescript-eslint/parser": "^8.0.0"
-                })
-                f.seek(0)
-                json.dump(data, f, indent=2)
-                f.truncate()
-            DeployerLogger.log_info("deps.package_json_updated", "Updated package.json with all dependencies.")
+            package_json_path = site_path / "package.json"
+            if package_json_path.exists():
+                with open(package_json_path, "r+") as f:
+                    data = json.load(f)
+                    data.setdefault("dependencies", {})
+                    data.setdefault("devDependencies", {})
+                    data["dependencies"].update({
+                        "@headlessui/react": "^2.2.7",
+                        "lucide-react": "^0.539.0",
+                        "tailwindcss-animate": "^1.0.7"
+                    })
+                    data["devDependencies"].update({
+                        "@typescript-eslint/eslint-plugin": "^8.0.0",
+                        "@typescript-eslint/parser": "^8.0.0"
+                    })
+                    f.seek(0)
+                    json.dump(data, f, indent=2)
+                    f.truncate()
+                DeployerLogger.log_info("deps.package_json_updated", "Updated package.json with all dependencies.")
 
-        result = run(["pnpm", "install"], cwd=str(site_path))
-        DeployerLogger.log_command_result(result, "pnpm_install")
-        if not result.success:
-            raise Exception("Failed to install dependencies.")
+            result = run(["pnpm", "install"], cwd=str(site_path))
+            DeployerLogger.log_command_result(result, "pnpm_install")
+            if not result.success:
+                raise Exception("Failed to install dependencies.")
 
-        DeployerLogger.log_resource_usage("after_install")
-        DeployerLogger.log_step_end("Install Dependencies", start_time, True)
+            DeployerLogger.log_resource_usage("after_install")
+            DeployerLogger.log_step_end("Install Dependencies", start_time, True)
 
-    def _build_and_deploy(self, site_path: Path, domain: str, email: str):
+    def build_and_deploy(self, site_path: Path, domain: str, email: str):
         """Builds the Next.js project and deploys it to the remote server."""
-        start_time = time.time()
-        DeployerLogger.log_step_start("Build and Deploy", 4, 5)
-        DeployerLogger.log_resource_usage("before_build")
+        with self._span("build_and_deploy", site_path=str(site_path), domain=domain, email=email):
+            start_time = time.time()
+            DeployerLogger.log_step_start("Build and Deploy", 4, 5)
+            DeployerLogger.log_resource_usage("before_build")
 
-        duplicate_lockfile = site_path / "pnpm-lock.yaml"
-        if duplicate_lockfile.exists():
-            DeployerLogger.log_warning("build.duplicate_lockfile", f"Removing duplicate lockfile at {duplicate_lockfile}")
-            duplicate_lockfile.unlink()
-        
-        build_result = run(["pnpm", "run", "build"], cwd=str(site_path))
-        DeployerLogger.log_command_result(build_result, "next_build")
-        if not build_result.success:
-            raise Exception("Failed to build Next.js project.")
+            duplicate_lockfile = site_path / "pnpm-lock.yaml"
+            if duplicate_lockfile.exists():
+                DeployerLogger.log_warning("build.duplicate_lockfile", f"Removing duplicate lockfile at {duplicate_lockfile}")
+                duplicate_lockfile.unlink()
 
-        DeployerLogger.log_resource_usage("after_build")
+            build_result = run(["pnpm", "run", "build"], cwd=str(site_path))
+            DeployerLogger.log_command_result(build_result, "next_build")
+            if not build_result.success:
+                raise Exception("Failed to build Next.js project.")
 
-        # Deployment steps...
-        remote_dir = f"/srv/apps/{domain}"
-        ssh_result = run(["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "mkdir", "-p", remote_dir])
-        DeployerLogger.log_command_result(ssh_result, "deploy_create_remote_dir")
-        if not ssh_result.success: raise Exception("Failed to create remote directory.")
+            DeployerLogger.log_resource_usage("after_build")
 
-        rsync_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", "--exclude", "node_modules", "--exclude", ".next/cache", "--exclude", ".git", f"{site_path}/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/"]
-        rsync_result = run(rsync_cmd)
-        DeployerLogger.log_command_result(rsync_result, "deploy_rsync")
-        if not rsync_result.success: raise Exception("Failed to sync files with rsync.")
+            # Deployment steps...
+            remote_dir = f"/srv/apps/{domain}"
+            ssh_result = run(["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "mkdir", "-p", remote_dir])
+            DeployerLogger.log_command_result(ssh_result, "deploy_create_remote_dir")
+            if not ssh_result.success: raise Exception("Failed to create remote directory.")
 
-        provision_cmd = ["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "sudo", "/srv/sites/provision_site.py", "--domain", domain, "--root", remote_dir, "--port", "3000", "--email", email]
-        provision_result = run(provision_cmd)
-        DeployerLogger.log_command_result(provision_result, "deploy_provision_script")
-        if not provision_result.success: raise Exception("Failed to run remote provisioning script.")
+            rsync_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", "--exclude", "node_modules", "--exclude", ".next/cache", "--exclude", ".git", f"{site_path}/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/"]
+            rsync_result = run(rsync_cmd)
+            DeployerLogger.log_command_result(rsync_result, "deploy_rsync")
+            if not rsync_result.success: raise Exception("Failed to sync files with rsync.")
 
-        DeployerLogger.log_step_end("Build and Deploy", start_time, True)
+            provision_cmd = ["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "sudo", "/srv/sites/provision_site.py", "--domain", domain, "--root", remote_dir, "--port", "3000", "--email", email]
+            provision_result = run(provision_cmd)
+            DeployerLogger.log_command_result(provision_result, "deploy_provision_script")
+            if not provision_result.success: raise Exception("Failed to run remote provisioning script.")
 
-    def _verify_deployment(self, domain: str):
+            DeployerLogger.log_step_end("Build and Deploy", start_time, True)
+
+            self.verify_deployment(domain)
+
+    def verify_deployment(self, domain: str):
         """Verifies the deployed site is accessible."""
-        start_time = time.time()
-        DeployerLogger.log_step_start("Verify Deployment", 5, 5)
-        url = f"https://{domain}"
-        try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            DeployerLogger.log_info("verify.success", f"Deployment verification successful for {url}", extra={"status_code": response.status_code, "response_time_ms": response.elapsed.total_seconds() * 1000})
-            DeployerLogger.log_step_end("Verify Deployment", start_time, True)
-        except requests.exceptions.RequestException as e:
-            DeployerLogger.log_error("verify.failure", f"Deployment verification failed for {url}: {e}", extra={"error": str(e)})
-            DeployerLogger.log_step_end("Verify Deployment", start_time, False)
-            # We don't raise an exception here, just log the failure
+        with self._span("verify_deployment", domain=domain):
+            start_time = time.time()
+            DeployerLogger.log_step_start("Verify Deployment", 5, 5)
+            url = f"https://{domain}"
+            try:
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+                DeployerLogger.log_info("verify.success", f"Deployment verification successful for {url}", extra={"status_code": response.status_code, "response_time_ms": response.elapsed.total_seconds() * 1000})
+                DeployerLogger.log_step_end("Verify Deployment", start_time, True)
+            except requests.exceptions.RequestException as e:
+                DeployerLogger.log_error("verify.failure", f"Deployment verification failed for {url}: {e}", extra={"error": str(e)})
+                DeployerLogger.log_step_end("Verify Deployment", start_time, False)
+                # We don't raise an exception here, just log the failure
