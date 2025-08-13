@@ -92,6 +92,12 @@ class Deployer:
             json.dump(eslintrc_content, f, indent=2)
         log.info("Created .eslintrc.json with custom rules.", extra={"path": str(eslintrc_path), "task_id": task_id})
 
+        # --- DIAGNOSTIC STEP ---
+        log.info("--- DIAGNOSTIC: Listing files after configuration ---", extra={"path": str(site_path), "task_id": task_id})
+        run(["ls", "-R"], cwd=str(site_path), task_id=task_id)
+        log.info("--- END DIAGNOSTIC ---", extra={"path": str(site_path), "task_id": task_id})
+
+
     def install_dependencies(self, site_path: Path, task_id: str):
         """Installs additional required dependencies."""
         log.info("Installing additional dependencies...", extra={"path": str(site_path), "task_id": task_id})
