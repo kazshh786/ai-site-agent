@@ -4,6 +4,7 @@ import json
 import time
 import logging
 from typing import List, Optional, Union
+from contextlib import contextmanager
 
 from vertexai import init as vertexai_init
 from vertexai.preview.generative_models import GenerativeModel, Part
@@ -12,7 +13,7 @@ from google.api_core import exceptions
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .schemas import SiteBlueprint
-from utils.logger import get_logger
+from logger import get_logger, start_span, finish_span
 
 log = get_logger(__name__)
 
@@ -34,164 +35,173 @@ PREDICTION_CLIENT = aiplatform.PredictionServiceClient(
     client_options={"api_endpoint": f"{TUNED_LOCATION}-aiplatform.googleapis.com"}
 )
 
-# --- Code Validation and Fixing Functions (Unchanged) ---
-def validate_component_imports(code: str, available_components: List[str], component_name: str, task_id: str) -> str:
-    if not available_components:
-        return code
-    import_pattern = r"import\s+(\w+)\s+from\s+['\"]@/components/(\w+)['\"]"
-    imports = re.findall(import_pattern, code)
-    available_set = set(f.replace('.tsx', '') for f in available_components)
-    code_lines = code.split('\n')
-    new_code_lines = []
-    replaced_components = set()
-    for line in code_lines:
-        match = re.match(import_pattern, line)
-        if match:
-            imported_name, file_name = match.groups()
-            if file_name in available_set:
-                new_code_lines.append(line)
-            else:
-                if "Placeholder" not in code:
-                    new_code_lines.append("import Placeholder from '@/components/Placeholder';")
-                replaced_components.add(imported_name)
-                log.warning(f"🔄 Replacing missing component import in {component_name}: {file_name}", 
-                            extra={"task_id": task_id, "component": component_name})
-        else:
-            new_code_lines.append(line)
-    code = '\n'.join(new_code_lines)
-    for component_to_replace in replaced_components:
-        code = re.sub(
-            rf'<{component_to_replace}(\s+[^>]*)?\/?>',
-            f'<Placeholder componentName="{component_to_replace}" />',
-            code
-        )
-        code = re.sub(
-            rf'<{component_to_replace}(\s+[^>]*)?>(.*?)<\/{component_to_replace}>',
-            f'<Placeholder componentName="{component_to_replace}" />',
-            code,
-            flags=re.DOTALL
-        )
-    return code
+@contextmanager
+def _span(operation_name: str, **tags):
+    """Context manager for automatic span lifecycle"""
+    start_span(operation_name, **tags)
+    try:
+        yield
+        finish_span(success=True)
+    except Exception as e:
+        finish_span(success=False, error=str(e))
+        raise
 
-def lint_and_fix_code(code: str, component_name: str, task_id: str) -> str:
-    fixes_applied = []
-    if 'import Link from' not in code and re.search(r'<a\s+href=["\'](/[^"\']*)["\']', code):
-        code = "import Link from 'next/link';\n" + code
-        fixes_applied.append("Added Link import")
-    code = re.sub(r'<a\s+href=(["\']/[^"\']*["\'])([^>]*)>(.*?)</a>', r'<Link href=\1\2>\3</Link>', code, flags=re.DOTALL)
-    if 'Link' in code:
-        fixes_applied.append("Fixed internal <a> tags")
-    if 'import Image from' not in code and '<img' in code:
-        code = "import Image from 'next/image';\n" + code
-        fixes_applied.append("Added Image import")
-    def replace_img_with_image(match):
-        attrs_str = match.group(1)
-        attrs = dict(re.findall(r'(\w+)=["\']([^"\']*)["\']', attrs_str))
-        if 'width' not in attrs: attrs['width'] = '500'
-        if 'height' not in attrs: attrs['height'] = '300'
-        if 'alt' not in attrs: attrs['alt'] = 'image'
-        final_attrs = []
-        for k, v in attrs.items():
-            if v.isdigit():
-                final_attrs.append(f'{k}={{int({v})}}')
+# --- Code Validation and Fixing Functions (Unchanged) ---
+def validate_component_imports(code: str, available_components: List[str], component_name: str) -> str:
+    with _span("validate_component_imports", component_name=component_name):
+        if not available_components:
+            return code
+        import_pattern = r"import\s+(\w+)\s+from\s+['\"]@/components/(\w+)['\"]"
+        imports = re.findall(import_pattern, code)
+        available_set = set(f.replace('.tsx', '') for f in available_components)
+        code_lines = code.split('\n')
+        new_code_lines = []
+        replaced_components = set()
+        for line in code_lines:
+            match = re.match(import_pattern, line)
+            if match:
+                imported_name, file_name = match.groups()
+                if file_name in available_set:
+                    new_code_lines.append(line)
+                else:
+                    if "Placeholder" not in code:
+                        new_code_lines.append("import Placeholder from '@/components/Placeholder';")
+                    replaced_components.add(imported_name)
+                    log.warning(f"🔄 Replacing missing component import in {component_name}: {file_name}",
+                                extra={"component": component_name})
             else:
-                final_attrs.append(f'{k}="{v}"')
-        return f'<Image {" ".join(final_attrs)} />'
-    code = re.sub(r'<img([^>]+)/?>', replace_img_with_image, code)
-    if 'Image' in code:
-        fixes_applied.append("Fixed <img> tags")
-    if re.search(r'use(State|Effect|Ref|Callback|Memo|Context)', code) and not code.strip().startswith('"use client"'):
-        code = '"use client";\n' + code
-        fixes_applied.append("Added 'use client' directive")
-    if fixes_applied:
-        log.info(f"🔧 Applied code fixes to {component_name}: {', '.join(fixes_applied)}", 
-                 extra={"task_id": task_id, "component": component_name, "fixes": fixes_applied})
-    return code
+                new_code_lines.append(line)
+        code = '\n'.join(new_code_lines)
+        for component_to_replace in replaced_components:
+            code = re.sub(
+                rf'<{component_to_replace}(\s+[^>]*)?\/?>',
+                f'<Placeholder componentName="{component_to_replace}" />',
+                code
+            )
+            code = re.sub(
+                rf'<{component_to_replace}(\s+[^>]*)?>(.*?)<\/{component_to_replace}>',
+                f'<Placeholder componentName="{component_to_replace}" />',
+                code,
+                flags=re.DOTALL
+            )
+        return code
+
+def lint_and_fix_code(code: str, component_name: str) -> str:
+    with _span("lint_and_fix_code", component_name=component_name):
+        fixes_applied = []
+        if 'import Link from' not in code and re.search(r'<a\s+href=["\'](/[^"\']*)["\']', code):
+            code = "import Link from 'next/link';\n" + code
+            fixes_applied.append("Added Link import")
+        code = re.sub(r'<a\s+href=(["\']/[^"\']*["\'])([^>]*)>(.*?)</a>', r'<Link href=\1\2>\3</Link>', code, flags=re.DOTALL)
+        if 'Link' in code:
+            fixes_applied.append("Fixed internal <a> tags")
+        if 'import Image from' not in code and '<img' in code:
+            code = "import Image from 'next/image';\n" + code
+            fixes_applied.append("Added Image import")
+        def replace_img_with_image(match):
+            attrs_str = match.group(1)
+            attrs = dict(re.findall(r'(\w+)=["\']([^"\']*)["\']', attrs_str))
+            if 'width' not in attrs: attrs['width'] = '500'
+            if 'height' not in attrs: attrs['height'] = '300'
+            if 'alt' not in attrs: attrs['alt'] = 'image'
+            final_attrs = []
+            for k, v in attrs.items():
+                if v.isdigit():
+                    final_attrs.append(f'{k}={{int({v})}}')
+                else:
+                    final_attrs.append(f'{k}="{v}"')
+            return f'<Image {" ".join(final_attrs)} />'
+        code = re.sub(r'<img([^>]+)/?>', replace_img_with_image, code)
+        if 'Image' in code:
+            fixes_applied.append("Fixed <img> tags")
+        if re.search(r'use(State|Effect|Ref|Callback|Memo|Context)', code) and not code.strip().startswith('"use client"'):
+            code = '"use client";\n' + code
+            fixes_applied.append("Added 'use client' directive")
+        if fixes_applied:
+            log.info(f"🔧 Applied code fixes to {component_name}: {', '.join(fixes_applied)}",
+                     extra={"component": component_name, "fixes": fixes_applied})
+        return code
 
 # --- THIS IS THE MODIFIED FUNCTION ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def _generate_code(prompt: str, component_name: str, task_id: str, available_components: Optional[List[str]] = None) -> str:
+def _generate_code(prompt: str, component_name: str, available_components: Optional[List[str]] = None) -> str:
     """
     Generates code using the fine-tuned model and applies a validation pipeline.
     """
-    log_extra = {"task_id": task_id, "request_type": f"generate_code:{component_name}", "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
-    log.info(f"🧠 Requesting AI for: {log_extra['request_type']} (tuned model)", extra=log_extra)
-    start_time = time.time()
+    with _span("_generate_code", component_name=component_name):
+        log_extra = {"request_type": f"generate_code:{component_name}", "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
+        log.info(f"🧠 Requesting AI for: {log_extra['request_type']} (tuned model)", extra=log_extra)
 
-    request = aiplatform.GenerateContentRequest(
-        model=TUNED_ENDPOINT_PATH,
-        contents=[aiplatform.Content(role="user", parts=[aiplatform.Part(text=prompt)])],
-        # Request plain text for code generation
-        generation_config=aiplatform.GenerationConfig(response_mime_type="text/plain")
-    )
+        request = aiplatform.GenerateContentRequest(
+            model=TUNED_ENDPOINT_PATH,
+            contents=[aiplatform.Content(role="user", parts=[aiplatform.Part(text=prompt)])],
+            # Request plain text for code generation
+            generation_config=aiplatform.GenerationConfig(response_mime_type="text/plain")
+        )
 
-    try:
-        response = PREDICTION_CLIENT.generate_content(request=request)
-        execution_time = time.time() - start_time
-        log.info(f"✅ AI response received for: {log_extra['request_type']} in {execution_time:.2f}s", extra={**log_extra, "execution_time": execution_time})
+        try:
+            response = PREDICTION_CLIENT.generate_content(request=request)
 
-        if not (response.candidates and response.candidates[0].content.parts):
-            raise ValueError("Tuned AI model returned an empty or invalid response for code generation.")
+            if not (response.candidates and response.candidates[0].content.parts):
+                raise ValueError("Tuned AI model returned an empty or invalid response for code generation.")
 
-        raw_code = response.candidates[0].content.parts[0].text
+            raw_code = response.candidates[0].content.parts[0].text
 
-        # The rest of the validation pipeline remains the same
-        extracted_code = re.search(r'```(?:tsx|jsx|css|ts|typescript)?\s*\n(.*?)\n```', raw_code, re.DOTALL)
-        code_to_process = extracted_code.group(1).strip() if extracted_code else raw_code.strip()
+            # The rest of the validation pipeline remains the same
+            extracted_code = re.search(r'```(?:tsx|jsx|css|ts|typescript)?\s*\n(.*?)\n```', raw_code, re.DOTALL)
+            code_to_process = extracted_code.group(1).strip() if extracted_code else raw_code.strip()
 
-        if available_components and component_name == "DynamicPage.tsx":
-            code_to_process = validate_component_imports(code_to_process, available_components, component_name, task_id)
+            if available_components and component_name == "DynamicPage.tsx":
+                code_to_process = validate_component_imports(code_to_process, available_components, component_name)
 
-        final_code = lint_and_fix_code(code_to_process, component_name, task_id)
+            final_code = lint_and_fix_code(code_to_process, component_name)
 
-        return final_code
+            return final_code
 
-    except exceptions.GoogleAPICallError as e:
-        log.error(f"Google API Error calling tuned model for code generation: {e.message}", extra={"code": e.code, **log_extra})
-        raise
-    except Exception as e:
-        log.error(f"An unexpected error occurred with the tuned model during code generation: {e}", extra=log_extra)
-        raise
+        except exceptions.GoogleAPICallError as e:
+            log.error(f"Google API Error calling tuned model for code generation: {e.message}", extra={"code": e.code, **log_extra})
+            raise
+        except Exception as e:
+            log.error(f"An unexpected error occurred with the tuned model during code generation: {e}", extra=log_extra)
+            raise
 
 # --- Blueprint and Component Generation Functions (Unchanged) ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def get_site_blueprint(company: str, industry: str, task_id: str) -> Optional[SiteBlueprint]:
-    log_extra = {"task_id": task_id, "company": company, "industry": industry, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
-    log.info("🧠 Requesting AI for: get_site_blueprint (tuned model)", extra=log_extra)
-    start_time = time.time()
-    user_prompt_text = (
-        f"Generate a modern SaaS website blueprint for {company} "
-        f"in the {industry} industry. Output the blueprint as a JSON object strictly "
-        "following the provided schema, including pages, sections, and components."
-    )
-    request = aiplatform.GenerateContentRequest(
-        model=TUNED_ENDPOINT_PATH,
-        contents=[aiplatform.Content(role="user", parts=[aiplatform.Part(text=user_prompt_text)])],
-        generation_config=aiplatform.GenerationConfig(response_mime_type="application/json")
-    )
-    try:
-        response = PREDICTION_CLIENT.generate_content(request=request)
-        execution_time = time.time() - start_time
-        log.info(f"✅ AI response received for: get_site_blueprint in {execution_time:.2f}s", extra={**log_extra, "execution_time": execution_time})
-        if not (response.candidates and response.candidates[0].content.parts):
-            raise ValueError("Tuned AI model returned an empty or invalid response.")
-        raw_text = response.candidates[0].content.parts[0].text
-        blueprint_data = json.loads(raw_text)
-        log.info(f"Raw AI blueprint data: {json.dumps(blueprint_data, indent=2)}", extra=log_extra)
-        validated_blueprint = SiteBlueprint.model_validate(blueprint_data)
-        log.info("✅ Blueprint validated successfully from tuned model.", extra=log_extra)
-        return validated_blueprint
-    except json.JSONDecodeError as e:
-        log.error("Invalid JSON returned by tuned model.", extra={"raw_text": raw_text[:500], "error": str(e), **log_extra})
-        raise ValueError(f"Tuned model generated malformed JSON: {e}") from e
-    except exceptions.GoogleAPICallError as e:
-        log.error(f"Google API Error calling tuned model: {e.message}", extra={"code": e.code, **log_extra})
-        raise
-    except Exception as e:
-        log.error(f"An unexpected error occurred with the tuned model: {e}", extra=log_extra)
-        raise
+def get_site_blueprint(company: str, industry: str) -> Optional[SiteBlueprint]:
+    with _span("get_site_blueprint", company=company, industry=industry):
+        log_extra = {"company": company, "industry": industry, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
+        log.info("🧠 Requesting AI for: get_site_blueprint (tuned model)", extra=log_extra)
+        user_prompt_text = (
+            f"Generate a modern SaaS website blueprint for {company} "
+            f"in the {industry} industry. Output the blueprint as a JSON object strictly "
+            "following the provided schema, including pages, sections, and components."
+        )
+        request = aiplatform.GenerateContentRequest(
+            model=TUNED_ENDPOINT_PATH,
+            contents=[aiplatform.Content(role="user", parts=[aiplatform.Part(text=user_prompt_text)])],
+            generation_config=aiplatform.GenerationConfig(response_mime_type="application/json")
+        )
+        try:
+            response = PREDICTION_CLIENT.generate_content(request=request)
+            if not (response.candidates and response.candidates[0].content.parts):
+                raise ValueError("Tuned AI model returned an empty or invalid response.")
+            raw_text = response.candidates[0].content.parts[0].text
+            blueprint_data = json.loads(raw_text)
+            log.info(f"Raw AI blueprint data: {json.dumps(blueprint_data, indent=2)}", extra=log_extra)
+            validated_blueprint = SiteBlueprint.model_validate(blueprint_data)
+            log.info("✅ Blueprint validated successfully from tuned model.", extra=log_extra)
+            return validated_blueprint
+        except json.JSONDecodeError as e:
+            log.error("Invalid JSON returned by tuned model.", extra={"raw_text": raw_text[:500], "error": str(e), **log_extra})
+            raise ValueError(f"Tuned model generated malformed JSON: {e}") from e
+        except exceptions.GoogleAPICallError as e:
+            log.error(f"Google API Error calling tuned model: {e.message}", extra={"code": e.code, **log_extra})
+            raise
+        except Exception as e:
+            log.error(f"An unexpected error occurred with the tuned model: {e}", extra=log_extra)
+            raise
 
-def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
+def get_component_code(component_name: str, blueprint: SiteBlueprint) -> str:
     prompt = f"""
     You are a senior React/Next.js developer specializing in Tailwind CSS.
     Your task is to create the code for a single, reusable React component.
@@ -220,9 +230,9 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
         - **NEVER place JSX comments inside the opening tag of a component.** Place them on the line above.
     6.  **Output:** Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
     """
-    return _generate_code(prompt, f"{component_name}.tsx", task_id)
+    return _generate_code(prompt, f"{component_name}.tsx")
 
-def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
+def get_layout_code(blueprint: SiteBlueprint) -> str:
     font_family = "Inter"
     if blueprint.design_system and blueprint.design_system.get("styleTokens"):
         font_family = blueprint.design_system["styleTokens"].get("font_family", "Inter")
@@ -244,9 +254,9 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     4.  **Font:** The font should be '{font_family}'.
     5.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
-    return _generate_code(prompt, "layout.tsx", task_id)
+    return _generate_code(prompt, "layout.tsx")
 
-def get_globals_css_code(blueprint: SiteBlueprint, task_id: str) -> str:
+def get_globals_css_code(blueprint: SiteBlueprint) -> str:
     primary = "222.2 47.4% 11.2%"
     secondary = "210 40% 96.1%"
     if blueprint.design_system and blueprint.design_system.get("styleTokens"):
@@ -264,9 +274,9 @@ def get_globals_css_code(blueprint: SiteBlueprint, task_id: str) -> str:
       /* Add other necessary CSS variables like ring, radius, etc. */
     - Only output the raw CSS code in a single ```css code block.
     """
-    return _generate_code(prompt, "globals.css", task_id)
+    return _generate_code(prompt, "globals.css")
 
-def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
+def get_tailwind_config_code(blueprint: SiteBlueprint) -> str:
     prompt = """
     Generate a complete `tailwind.config.ts` for a Next.js 14+ App Router project.
 
@@ -319,9 +329,9 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
         - Include the `tailwindcss-animate` plugin.
     3.  **Output:** Only output raw TypeScript code in a single ```ts code block.
     """
-    return _generate_code(prompt, "tailwind.config.ts", task_id)
+    return _generate_code(prompt, "tailwind.config.ts")
 
-def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
+def get_header_code(blueprint: SiteBlueprint) -> str:
     page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
@@ -340,9 +350,9 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     3.  **Styling:** Use Tailwind CSS and `lucide-react` for icons.
     4.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
-    return _generate_code(prompt, "Header.tsx", task_id)
+    return _generate_code(prompt, "Header.tsx")
 
-def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
+def get_footer_code(blueprint: SiteBlueprint) -> str:
     page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
@@ -359,9 +369,9 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     3.  **Styling:** Use Tailwind CSS.
     4.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
-    return _generate_code(prompt, "Footer.tsx", task_id)
+    return _generate_code(prompt, "Footer.tsx")
 
-def get_placeholder_code(task_id: str) -> str:
+def get_placeholder_code() -> str:
     prompt = """
     Generate a `Placeholder.tsx` React component.
 
@@ -374,9 +384,9 @@ def get_placeholder_code(task_id: str) -> str:
     3.  **Message:** Display a friendly message indicating that the component with `componentName` failed to load.
     4.  **Output:** Output only the complete `.tsx` code in a ```tsx code block.
     """
-    return _generate_code(prompt, "Placeholder.tsx", task_id)
+    return _generate_code(prompt, "Placeholder.tsx")
 
-def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[str], task_id: str) -> str:
+def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[str]) -> str:
     prompt = f"""
     You are an expert Next.js developer. Create the dynamic page component `app/[...slug]/page.tsx`.
 
@@ -438,4 +448,4 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
 
     Output only the complete `.tsx` code in a ```tsx code block. Do not add any explanation.
     """
-    return _generate_code(prompt, "DynamicPage.tsx", task_id, component_filenames)
+    return _generate_code(prompt, "DynamicPage.tsx", component_filenames)
