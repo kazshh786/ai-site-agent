@@ -73,6 +73,12 @@ class Deployer:
         else:
             log.warning("package.json not found, skipping modification.", extra={"path": str(package_json_path), "task_id": task_id})
 
+        # Remove default eslint config if it exists, to ensure our config is used
+        default_eslint_config = site_path / "eslint.config.mjs"
+        if default_eslint_config.exists():
+            default_eslint_config.unlink()
+            log.info("Removed default eslint.config.mjs.", extra={"path": str(default_eslint_config), "task_id": task_id})
+
         # Create .eslintrc.json to downgrade linting errors
         eslintrc_path = site_path / ".eslintrc.json"
         eslintrc_content = {
@@ -85,6 +91,12 @@ class Deployer:
         with open(eslintrc_path, "w") as f:
             json.dump(eslintrc_content, f, indent=2)
         log.info("Created .eslintrc.json with custom rules.", extra={"path": str(eslintrc_path), "task_id": task_id})
+
+        # --- DIAGNOSTIC STEP ---
+        log.info("--- DIAGNOSTIC: Listing files after configuration ---", extra={"path": str(site_path), "task_id": task_id})
+        run(["ls", "-R"], cwd=str(site_path), task_id=task_id)
+        log.info("--- END DIAGNOSTIC ---", extra={"path": str(site_path), "task_id": task_id})
+
 
     def install_dependencies(self, site_path: Path, task_id: str):
         """Installs additional required dependencies."""

@@ -216,6 +216,7 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
         - Use `<Link href="...">` for internal navigation.
         - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
         - Add `"use client";` at the top ONLY if you use hooks like `useState`.
+        - **React Hook Rules**: NEVER call React Hooks inside conditions, loops, or nested functions. All Hooks must be called at the top level of the component.
         - **NEVER place JSX comments inside the opening tag of a component.** Place them on the line above.
     6.  **Output:** Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
     """
