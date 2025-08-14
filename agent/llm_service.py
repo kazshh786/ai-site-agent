@@ -167,14 +167,21 @@ def _generate_code(prompt: str, component_name: str, task_id: str, available_com
 
 # --- Blueprint and Component Generation Functions (Unchanged) ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def get_site_blueprint(company: str, industry: str, task_id: str) -> Optional[SiteBlueprint]:
-    with _span("get_site_blueprint", company=company, industry=industry):
-        log_extra = {"company": company, "industry": industry, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}", "task_id": task_id}
+def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optional[SiteBlueprint]:
+    with _span("get_site_blueprint", company=company, brief=brief):
+        log_extra = {"company": company, "brief": brief, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}", "task_id": task_id}
         log.info("🧠 Requesting AI for: get_site_blueprint (tuned model)", extra=log_extra)
+
+        company_text = f"for the company: {company}" if company else "for the company mentioned in the brief"
         user_prompt_text = (
-            f"Generate a modern SaaS website blueprint for {company} "
-            f"in the {industry} industry. Output the blueprint as a JSON object strictly "
-            "following the provided schema, including pages, sections, and components."
+            f"You are an expert website architect. Your task is to analyze the following detailed client brief "
+            f"and generate a complete JSON site blueprint that strictly follows the provided schema. "
+            f"The company name might be specified in the brief. If it is, you must use it. "
+            f"Ensure you create all the pages, services, and specific features mentioned.\n\n"
+            f"--- CLIENT BRIEF ---\n"
+            f"{brief}\n"
+            f"--- END BRIEF ---\n\n"
+            f"Now, generate the complete JSON blueprint {company_text}."
         )
         request = aiplatform.GenerateContentRequest(
             model=TUNED_ENDPOINT_PATH,

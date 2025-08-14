@@ -46,17 +46,17 @@ def _imports():
 
 @app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
 def create_website_task(
-    self, company: str, domain: str, industry: str, model: str = "gemini",
+    self, brief: str, company: str | None = None, domain: str | None = None, model: str = "gemini",
     force: bool = False, deploy: bool = True, email: str | None = None,
 ):
     # 1. Set the trace context for the entire task
-    trace_context = start_trace("create_website_task", 
-                               task_id=self.request.id, 
-                               company=company, 
-                               domain=domain, 
-                               industry=industry)
+    trace_context = start_trace("create_website_task",
+                               task_id=self.request.id,
+                               company=company,
+                               domain=domain,
+                               brief=brief)
     set_trace_context(trace_context)
-    
+
     logger.info("🚀 Full AI website creation task started.")
 
     try:
@@ -69,12 +69,12 @@ def create_website_task(
         ) = _imports()
 
         # 2. Get Blueprint & Images - PASS task_id to ALL functions
-        blueprint = get_site_blueprint(company, industry, task_id=self.request.id)
+        blueprint = get_site_blueprint(company, brief, task_id=self.request.id)
         if blueprint is None:
             raise ValueError("Blueprint generation failed or returned an invalid structure.")
 
         try:
-            imgs = fetch_images(industry, task_id=self.request.id)
+            imgs = fetch_images(brief, task_id=self.request.id)
         except Exception as e:
             logger.warning("Image fetch failed, continuing without images.", extra={"error": str(e)})
 
