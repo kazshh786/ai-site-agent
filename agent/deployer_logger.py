@@ -39,7 +39,7 @@ class DeployerLogger:
         log_extra = {
             "operation": operation_name,
             "command": " ".join(result.command),
-            "duration_ms": result.duration * 1000,
+            "duration_ms": result.execution_time * 1000,
             "exit_code": result.return_code,
             "stdout": result.stdout,
             "stderr": result.stderr

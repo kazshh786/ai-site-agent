@@ -1,4 +1,5 @@
-# tasks.py
+# tasks.py - FINAL CORRECTED VERSION
+
 import os
 import logging
 from pathlib import Path
@@ -9,7 +10,7 @@ from celery.utils.log import get_task_logger
 
 # Assuming your new FileWriter is in this module
 from agent.file_writer import FileWriter
-from logger import start_trace
+from logger import start_trace, set_trace_context
 
 logger = get_task_logger(__name__)
 
@@ -48,10 +49,18 @@ def create_website_task(
     self, company: str, domain: str, industry: str, model: str = "gemini",
     force: bool = False, deploy: bool = True, email: str | None = None,
 ):
-    start_trace("create_website_task", task_id=self.request.id, company=company, domain=domain, industry=industry)
+    # 1. Set the trace context for the entire task
+    trace_context = start_trace("create_website_task", 
+                               task_id=self.request.id, 
+                               company=company, 
+                               domain=domain, 
+                               industry=industry)
+    set_trace_context(trace_context)
+    
     logger.info("🚀 Full AI website creation task started.")
 
     try:
+        # Import functions - NO importlib.reload() calls!
         (
             get_site_blueprint, get_component_code, get_layout_code,
             get_globals_css_code, get_tailwind_config_code, get_header_code,
@@ -59,91 +68,79 @@ def create_website_task(
             Deployer, fetch_images
         ) = _imports()
 
-        # 1. Get Blueprint & Images
-        blueprint = get_site_blueprint(company, industry)
+        # 2. Get Blueprint & Images - PASS task_id to ALL functions
+        blueprint = get_site_blueprint(company, industry, task_id=self.request.id)
         if blueprint is None:
             raise ValueError("Blueprint generation failed or returned an invalid structure.")
 
         try:
-            imgs = fetch_images(industry)
-            # This part may need adjustment depending on how images are handled in the new schema
-            # if hasattr(blueprint, "images"):
-            #     blueprint.images = imgs
+            imgs = fetch_images(industry, task_id=self.request.id)
         except Exception as e:
-            logger.warning(
-                "Image fetch failed, continuing without images.",
-                extra={"error": str(e)},
-            )
+            logger.warning("Image fetch failed, continuing without images.", extra={"error": str(e)})
 
-        # 2. Setup
+        # 3. Setup Project Directory - PASS task_id
         deployer = Deployer()
-        file_writer = FileWriter(base_dir="/opt/agent/ai-site-agent")
-        site_path = deployer.create_project_directory(domain, force)
+        site_path = deployer.create_project_directory(domain, force, task_id=self.request.id)
         
-        # 3. Scaffold Project
-        deployer.scaffold_project(site_path)
+        # 4. Scaffold and Configure Project - PASS task_id
+        deployer.scaffold_project(site_path, task_id=self.request.id)
         
-        # 4. Generate and Write ALL Component Files with AI
+        # 5. Initialize FileWriter - PASS task_id
+        file_writer = FileWriter(base_dir=site_path, task_id=self.request.id)
+        
+        # 6. Generate and Write ALL Site Files - PASS task_id to ALL functions
         logger.info("✍️ Generating all site files with AI...")
         
-        layout_result = file_writer.write_file(site_path / "app/layout.tsx", get_layout_code(blueprint))
-        if not layout_result.success:
-            raise Exception(f"Failed to write layout.tsx: {layout_result.error}")
+        # Define files to be written with task_id passed to all generation functions
+        files_to_write = {
+            "app/layout.tsx": get_layout_code(blueprint, task_id=self.request.id),
+            "app/globals.css": get_globals_css_code(blueprint, task_id=self.request.id),
+            "tailwind.config.ts": get_tailwind_config_code(blueprint, task_id=self.request.id),
+            "components/Header.tsx": get_header_code(blueprint, task_id=self.request.id),
+            "components/Footer.tsx": get_footer_code(blueprint, task_id=self.request.id),
+            "components/Placeholder.tsx": get_placeholder_code(task_id=self.request.id)
+        }
+        
+        # Write static files and check for errors
+        for path, content in files_to_write.items():
+            result = file_writer.write_file(site_path / path, content)
+            if not result.success:
+                raise Exception(f"Failed to write {path}: {result.error}")
 
-        css_result = file_writer.write_file(site_path / "app/globals.css", get_globals_css_code(blueprint))
-        if not css_result.success:
-            raise Exception(f"Failed to write globals.css: {css_result.error}")
-
-        tailwind_result = file_writer.write_file(site_path / "tailwind.config.ts", get_tailwind_config_code(blueprint))
-        if not tailwind_result.success:
-            raise Exception(f"Failed to write tailwind.config.ts: {tailwind_result.error}")
-
-        header_result = file_writer.write_file(site_path / "components/Header.tsx", get_header_code(blueprint))
-        if not header_result.success:
-            raise Exception(f"Failed to write Header.tsx: {header_result.error}")
-
-        footer_result = file_writer.write_file(site_path / "components/Footer.tsx", get_footer_code(blueprint))
-        if not footer_result.success:
-            raise Exception(f"Failed to write Footer.tsx: {footer_result.error}")
-
-        placeholder_result = file_writer.write_file(site_path / "components/Placeholder.tsx", get_placeholder_code())
-        if not placeholder_result.success:
-            raise Exception(f"Failed to write Placeholder.tsx: {placeholder_result.error}")
-
-        # CORRECTED: Updated the logic to iterate through the new, more detailed blueprint structure.
-        unique_components = set()
-        for page in blueprint.pages:
-            for section in page.sections:
-                for component in section.components:
-                    # We use component_name as it's more descriptive than component_type
-                    unique_components.add(component.component_name)
+        # Generate and write dynamic components - PASS task_id
+        unique_components = {
+            component.component_name 
+            for page in blueprint.pages 
+            for section in page.sections 
+            for component in section.components
+        }
         
         for name in unique_components:
-            code = get_component_code(name, blueprint)
-            file_writer.write_file(site_path / "components" / f"{name}.tsx", code)
+            code = get_component_code(name, blueprint, task_id=self.request.id)
+            result = file_writer.write_file(site_path / "components" / f"{name}.tsx", code)
+            if not result.success:
+                raise Exception(f"Failed to write component {name}.tsx: {result.error}")
 
-        # 5. Regenerate the main page.tsx with correct component imports
-        logger.info("🧠 Regenerating main page file with correct component context...")
+        # Generate and write dynamic page - PASS task_id
         component_dir = site_path / "components"
-        try:
-            actual_component_filenames = os.listdir(component_dir)
-        except FileNotFoundError:
-            actual_component_filenames = []
-            logger.warning(f"Component directory not found at {component_dir}, cannot generate page.tsx with context.")
+        actual_component_filenames = os.listdir(component_dir) if component_dir.exists() else []
+        page_tsx_code = get_dynamic_page_code(blueprint, actual_component_filenames, task_id=self.request.id)
+        result = file_writer.write_file(site_path / "app" / "[...slug]" / "page.tsx", page_tsx_code)
+        if not result.success:
+            raise Exception(f"Failed to write dynamic page: {result.error}")
         
-        page_tsx_code = get_dynamic_page_code(blueprint, actual_component_filenames)
-        file_writer.write_file(site_path / "app" / "[...slug]" / "page.tsx", page_tsx_code)
-        
-        # 6. Save the blueprint.json and log file writing summary
+        # Save the blueprint.json and log file writing summary
         blueprint_path = site_path / "blueprint.json"
-        file_writer.write_file(blueprint_path, blueprint.model_dump_json(by_alias=True, indent=2))
+        result = file_writer.write_file(blueprint_path, blueprint.model_dump_json(by_alias=True, indent=2))
+        if not result.success:
+            raise Exception(f"Failed to write blueprint.json: {result.error}")
         file_writer.log_final_summary()
 
-        # 7. Install, Build, and Deploy
-        deployer.install_dependencies(site_path)
+        # 7. Install, Build, and Deploy - PASS task_id
+        deployer.install_dependencies(site_path, task_id=self.request.id)
         if deploy:
             email = email or os.getenv("DEPLOY_EMAIL", "admin@example.com")
-            deployer.build_and_deploy(site_path, domain, email)
+            deployer.build_and_deploy(site_path, domain, email, task_id=self.request.id)
 
         result = {"status": "ok", "site_path": str(site_path)}
         logger.info("✅ Full website creation task finished successfully.")

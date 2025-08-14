@@ -47,7 +47,7 @@ def _span(operation_name: str, **tags):
         raise
 
 # --- Code Validation and Fixing Functions (Unchanged) ---
-def validate_component_imports(code: str, available_components: List[str], component_name: str) -> str:
+def validate_component_imports(code: str, available_components: List[str], component_name: str, task_id: str) -> str:
     with _span("validate_component_imports", component_name=component_name):
         if not available_components:
             return code
@@ -68,7 +68,7 @@ def validate_component_imports(code: str, available_components: List[str], compo
                         new_code_lines.append("import Placeholder from '@/components/Placeholder';")
                     replaced_components.add(imported_name)
                     log.warning(f"🔄 Replacing missing component import in {component_name}: {file_name}",
-                                extra={"component": component_name})
+                                extra={"component": component_name, "task_id": task_id})
             else:
                 new_code_lines.append(line)
         code = '\n'.join(new_code_lines)
@@ -86,7 +86,7 @@ def validate_component_imports(code: str, available_components: List[str], compo
             )
         return code
 
-def lint_and_fix_code(code: str, component_name: str) -> str:
+def lint_and_fix_code(code: str, component_name: str, task_id: str) -> str:
     with _span("lint_and_fix_code", component_name=component_name):
         fixes_applied = []
         if 'import Link from' not in code and re.search(r'<a\s+href=["\'](/[^"\']*)["\']', code):
@@ -119,17 +119,17 @@ def lint_and_fix_code(code: str, component_name: str) -> str:
             fixes_applied.append("Added 'use client' directive")
         if fixes_applied:
             log.info(f"🔧 Applied code fixes to {component_name}: {', '.join(fixes_applied)}",
-                     extra={"component": component_name, "fixes": fixes_applied})
+                     extra={"component": component_name, "fixes": fixes_applied, "task_id": task_id})
         return code
 
 # --- THIS IS THE MODIFIED FUNCTION ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def _generate_code(prompt: str, component_name: str, available_components: Optional[List[str]] = None) -> str:
+def _generate_code(prompt: str, component_name: str, task_id: str, available_components: Optional[List[str]] = None) -> str:
     """
     Generates code using the fine-tuned model and applies a validation pipeline.
     """
     with _span("_generate_code", component_name=component_name):
-        log_extra = {"request_type": f"generate_code:{component_name}", "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
+        log_extra = {"request_type": f"generate_code:{component_name}", "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}", "task_id": task_id}
         log.info(f"🧠 Requesting AI for: {log_extra['request_type']} (tuned model)", extra=log_extra)
 
         request = aiplatform.GenerateContentRequest(
@@ -152,9 +152,9 @@ def _generate_code(prompt: str, component_name: str, available_components: Optio
             code_to_process = extracted_code.group(1).strip() if extracted_code else raw_code.strip()
 
             if available_components and component_name == "DynamicPage.tsx":
-                code_to_process = validate_component_imports(code_to_process, available_components, component_name)
+                code_to_process = validate_component_imports(code_to_process, available_components, component_name, task_id)
 
-            final_code = lint_and_fix_code(code_to_process, component_name)
+            final_code = lint_and_fix_code(code_to_process, component_name, task_id)
 
             return final_code
 
@@ -167,9 +167,9 @@ def _generate_code(prompt: str, component_name: str, available_components: Optio
 
 # --- Blueprint and Component Generation Functions (Unchanged) ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def get_site_blueprint(company: str, industry: str) -> Optional[SiteBlueprint]:
+def get_site_blueprint(company: str, industry: str, task_id: str) -> Optional[SiteBlueprint]:
     with _span("get_site_blueprint", company=company, industry=industry):
-        log_extra = {"company": company, "industry": industry, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}"}
+        log_extra = {"company": company, "industry": industry, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}", "task_id": task_id}
         log.info("🧠 Requesting AI for: get_site_blueprint (tuned model)", extra=log_extra)
         user_prompt_text = (
             f"Generate a modern SaaS website blueprint for {company} "
@@ -201,7 +201,7 @@ def get_site_blueprint(company: str, industry: str) -> Optional[SiteBlueprint]:
             log.error(f"An unexpected error occurred with the tuned model: {e}", extra=log_extra)
             raise
 
-def get_component_code(component_name: str, blueprint: SiteBlueprint) -> str:
+def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
     prompt = f"""
     You are a senior React/Next.js developer specializing in Tailwind CSS.
     Your task is to create the code for a single, reusable React component.
@@ -230,9 +230,9 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint) -> str:
         - **NEVER place JSX comments inside the opening tag of a component.** Place them on the line above.
     6.  **Output:** Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
     """
-    return _generate_code(prompt, f"{component_name}.tsx")
+    return _generate_code(prompt, f"{component_name}.tsx", task_id)
 
-def get_layout_code(blueprint: SiteBlueprint) -> str:
+def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     font_family = "Inter"
     if blueprint.design_system and blueprint.design_system.get("styleTokens"):
         font_family = blueprint.design_system["styleTokens"].get("font_family", "Inter")
@@ -254,9 +254,9 @@ def get_layout_code(blueprint: SiteBlueprint) -> str:
     4.  **Font:** The font should be '{font_family}'.
     5.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
-    return _generate_code(prompt, "layout.tsx")
+    return _generate_code(prompt, "layout.tsx", task_id)
 
-def get_globals_css_code(blueprint: SiteBlueprint) -> str:
+def get_globals_css_code(blueprint: SiteBlueprint, task_id: str) -> str:
     primary = "222.2 47.4% 11.2%"
     secondary = "210 40% 96.1%"
     if blueprint.design_system and blueprint.design_system.get("styleTokens"):
@@ -274,9 +274,9 @@ def get_globals_css_code(blueprint: SiteBlueprint) -> str:
       /* Add other necessary CSS variables like ring, radius, etc. */
     - Only output the raw CSS code in a single ```css code block.
     """
-    return _generate_code(prompt, "globals.css")
+    return _generate_code(prompt, "globals.css", task_id)
 
-def get_tailwind_config_code(blueprint: SiteBlueprint) -> str:
+def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     prompt = """
     Generate a complete `tailwind.config.ts` for a Next.js 14+ App Router project.
 
@@ -329,9 +329,9 @@ def get_tailwind_config_code(blueprint: SiteBlueprint) -> str:
         - Include the `tailwindcss-animate` plugin.
     3.  **Output:** Only output raw TypeScript code in a single ```ts code block.
     """
-    return _generate_code(prompt, "tailwind.config.ts")
+    return _generate_code(prompt, "tailwind.config.ts", task_id)
 
-def get_header_code(blueprint: SiteBlueprint) -> str:
+def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
@@ -350,9 +350,9 @@ def get_header_code(blueprint: SiteBlueprint) -> str:
     3.  **Styling:** Use Tailwind CSS and `lucide-react` for icons.
     4.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
-    return _generate_code(prompt, "Header.tsx")
+    return _generate_code(prompt, "Header.tsx", task_id)
 
-def get_footer_code(blueprint: SiteBlueprint) -> str:
+def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
@@ -369,9 +369,9 @@ def get_footer_code(blueprint: SiteBlueprint) -> str:
     3.  **Styling:** Use Tailwind CSS.
     4.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
-    return _generate_code(prompt, "Footer.tsx")
+    return _generate_code(prompt, "Footer.tsx", task_id)
 
-def get_placeholder_code() -> str:
+def get_placeholder_code(task_id: str) -> str:
     prompt = """
     Generate a `Placeholder.tsx` React component.
 
@@ -384,9 +384,9 @@ def get_placeholder_code() -> str:
     3.  **Message:** Display a friendly message indicating that the component with `componentName` failed to load.
     4.  **Output:** Output only the complete `.tsx` code in a ```tsx code block.
     """
-    return _generate_code(prompt, "Placeholder.tsx")
+    return _generate_code(prompt, "Placeholder.tsx", task_id)
 
-def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[str]) -> str:
+def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[str], task_id: str) -> str:
     prompt = f"""
     You are an expert Next.js developer. Create the dynamic page component `app/[...slug]/page.tsx`.
 
@@ -448,4 +448,4 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
 
     Output only the complete `.tsx` code in a ```tsx code block. Do not add any explanation.
     """
-    return _generate_code(prompt, "DynamicPage.tsx", component_filenames)
+    return _generate_code(prompt, "DynamicPage.tsx", task_id, component_filenames)

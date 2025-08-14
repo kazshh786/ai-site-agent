@@ -32,6 +32,10 @@ class TraceContext:
             tags=self.tags.copy()
         )
 
+def set_trace_context(context: TraceContext):
+    """Sets the current trace context for the active thread/task."""
+    _trace_context.set(context)
+
 class TracingFilter(logging.Filter):
     """Inject tracing context into all log records"""
     def filter(self, record):

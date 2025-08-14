@@ -64,7 +64,7 @@ class FileWriter:
     Enhanced with comprehensive logging, security checks, and statistics tracking.
     """
     
-    def __init__(self, base_dir="."):
+    def __init__(self, base_dir=".", task_id: Optional[str] = None):
         self.base_dir = Path(base_dir).resolve()
         self.stats = FileWriteStats()
         
