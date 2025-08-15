@@ -147,6 +147,20 @@ class Deployer:
                 json.dump(eslintrc_content, f, indent=2)
             DeployerLogger.log_info("project.configure.eslint_custom", "Created comprehensive .eslintrc.json with JSX parser config.")
 
+            # Create next.config.ts with standalone output
+            next_config_path = site_path / "next.config.ts"
+            next_config_content = """
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',
+};
+
+module.exports = nextConfig;
+"""
+            with open(next_config_path, "w") as f:
+                f.write(next_config_content)
+            DeployerLogger.log_info("project.configure.next_config", "Created next.config.ts with standalone output.")
+
             DeployerLogger.log_resource_usage("after_scaffold")
             DeployerLogger.log_step_end("Scaffold and Configure Project", start_time, True)
 
