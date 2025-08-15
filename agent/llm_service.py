@@ -522,24 +522,24 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
     **TypeScript Type Definitions (for context):**
     You MUST use these interfaces to correctly type variables derived from the blueprint.
     ```tsx
-    interface Component {
+    interface Component {{
       component_name: string;
       props: Record<string, unknown>;
-    }
+    }}
 
-    interface Section {
+    interface Section {{
       section_name: string;
       heading: string | null;
       components: Component[];
-    }
+    }}
 
     // THIS MUST EXACTLY MATCH THE PYTHON SCHEMA
-    interface Page {
+    interface Page {{
       id: string;
       name: string; // Use 'name' for the page title
       path: string; // Use 'path' for the URL slug
       sections: Section[];
-    }
+    }}
     ```
 
     **CRITICAL NEXT.JS 15 REQUIREMENTS:**
