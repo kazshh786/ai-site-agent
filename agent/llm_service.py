@@ -541,11 +541,10 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     ```
     And the `next.config.js` should look like this:
     ```javascript
-    /** @type {import('next').NextConfig} */
-    const nextConfig = {
+    /** @type {{import('next').NextConfig}} */
+    const nextConfig = {{
       output: 'standalone',
-    };
-
+    }};
     module.exports = nextConfig;
     ```
     """
