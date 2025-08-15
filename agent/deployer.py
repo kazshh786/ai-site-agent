@@ -5,6 +5,7 @@ import shutil
 import json
 import time
 import requests
+import re
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -12,6 +13,42 @@ from utils.commands import run
 from .deployer_logger import DeployerLogger
 from logger import start_span, finish_span
 from utils.metrics import metrics
+
+def merge_tailwind_tokens(base_config: str, ai_tokens: dict) -> str:
+    """Merges AI-generated design tokens into the base Tailwind config string."""
+    config_str = base_config
+
+    if "content" in ai_tokens:
+        # Produces double-quoted strings, which is valid in JS.
+        content_str = json.dumps(ai_tokens["content"], indent=4)
+        # Regex to replace the content array
+        config_str = re.sub(
+            r"(\s*content: )\[[^\]]*\]",
+            f"\\1{content_str}",
+            config_str,
+            flags=re.DOTALL
+        )
+
+    if "colors" in ai_tokens:
+        colors_str = json.dumps(ai_tokens["colors"], indent=8)
+        # Regex to replace the colors object. Assumes it's followed by a comma.
+        config_str = re.sub(
+            r"(\s*colors: )\{.*?\n\s*\},",
+            f"\\1{colors_str},",
+            config_str,
+            flags=re.DOTALL
+        )
+
+    if "fontFamily" in ai_tokens:
+        font_family_str = json.dumps(ai_tokens["fontFamily"], indent=8)
+        # Regex to replace the fontFamily object. Assumes it's followed by a comma.
+        config_str = re.sub(
+            r"(\s*fontFamily: )\{.*?\n\s*\},",
+            f"\\1{font_family_str},",
+            config_str,
+            flags=re.DOTALL
+        )
+    return config_str
 
 # Using your deployment constants
 DEPLOYER_USER = "deployer"
@@ -161,6 +198,81 @@ module.exports = nextConfig;
                 f.write(next_config_content)
             DeployerLogger.log_info("project.configure.next_config", "Created next.config.ts with standalone output.")
 
+            # Create tailwind.config.ts with adaptive token merging
+            base_tailwind_config = """
+import type { Config } from "tailwindcss";
+import defaultTheme from "tailwindcss/defaultTheme";
+
+const config: Config = {
+  darkMode: "class",
+  content: [
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+      },
+      fontFamily: {
+        sans: ["Inter", ...defaultTheme.fontFamily.sans],
+      },
+    },
+  },
+  plugins: [require("tailwindcss-animate")],
+};
+
+export default config;
+"""
+            final_tailwind_config = base_tailwind_config
+            ai_tokens_path = site_path / "ai_tailwind_tokens.json"
+            if ai_tokens_path.exists():
+                try:
+                    with open(ai_tokens_path, "r") as f:
+                        ai_tokens = json.load(f)
+                    final_tailwind_config = merge_tailwind_tokens(base_tailwind_config, ai_tokens)
+                    DeployerLogger.log_info("project.configure.tailwind_tokens_merged", "Merged AI tokens into tailwind.config.ts.")
+                except json.JSONDecodeError as e:
+                    DeployerLogger.log_warning("project.configure.tailwind_tokens_invalid_json", f"Could not merge AI tokens due to invalid JSON: {e}")
+
+            tailwind_config_path = site_path / "tailwind.config.ts"
+            with open(tailwind_config_path, "w") as f:
+                f.write(final_tailwind_config)
+            DeployerLogger.log_info("project.configure.tailwind_config", "Created adaptive tailwind.config.ts.")
+
             DeployerLogger.log_resource_usage("after_scaffold")
             DeployerLogger.log_step_end("Scaffold and Configure Project", start_time, True)
 
@@ -264,4 +376,4 @@ module.exports = nextConfig;
             except requests.exceptions.RequestException as e:
                 DeployerLogger.log_error("verify.failure", f"Deployment verification failed for {url}: {e}", extra={"error": str(e)})
                 DeployerLogger.log_step_end("Verify Deployment", start_time, False)
-                # We don't raise an exception here, just log the failure
+                raise e # <-- ADD THIS LINE
