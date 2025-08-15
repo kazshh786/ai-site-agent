@@ -1,4 +1,5 @@
 # agent/schemas.py
+import uuid
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field, root_validator
 
@@ -30,8 +31,9 @@ class Section(BaseModel):
         return values
 
 class Page(BaseModel):
-    page_name: str
-    page_path: str
+    id: str
+    name: str
+    path: str
     sections: List[Section] = Field(default_factory=list)
 
     class Config:
@@ -39,9 +41,15 @@ class Page(BaseModel):
 
     @root_validator(pre=True)
     def map_page_fields(cls, values):
-        values['page_name'] = values.get('pageName') or values.get('name') or f"Page_{values.get('id', 'unknown')}"
-        path = values.get('pagePath') or values.get('path') or values.get('urlSlug') or f"/{values['page_name'].lower().replace(' ', '-')}"
-        values['page_path'] = path if path.startswith('/') else f"/{path}"
+        # Map AI-generated fields to our consistent schema
+        values['id'] = str(values.get('id') or values.get('page_id') or uuid.uuid4())
+        values['name'] = values.get('name') or values.get('pageName') or values.get('page_name') or f"Page_{values['id']}"
+
+        path_candidate = values.get('path') or values.get('pagePath') or values.get('page_path') or values.get('urlSlug')
+        if not path_candidate:
+            path_candidate = f"/{values['name'].lower().replace(' ', '-')}"
+
+        values['path'] = path_candidate if path_candidate.startswith('/') else f"/{path_candidate}"
         return values
 
 class SiteBlueprint(BaseModel):
