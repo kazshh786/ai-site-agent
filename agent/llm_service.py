@@ -515,6 +515,7 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
     }}
 
     interface Page {{
+      page_id: string;
       page_name: string;
       page_path: string;
       sections: Section[];
