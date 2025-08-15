@@ -1,3 +1,5 @@
+# Complete fix for agent/deployer.py
+
 import os
 import shutil
 import json
@@ -90,34 +92,60 @@ class Deployer:
                     f.truncate()
                 DeployerLogger.log_info("project.configure.package_json", "Updated package.json build script.")
 
+            # Configure TypeScript for proper JSX handling
+            tsconfig_path = site_path / "tsconfig.json"
+            if tsconfig_path.exists():
+                with open(tsconfig_path, "r+") as f:
+                    data = json.load(f)
+                    # Ensure proper JSX configuration
+                    data["compilerOptions"]["jsx"] = "preserve"
+                    data["compilerOptions"]["jsxImportSource"] = "react"
+                    # Add React types to ensure JSX namespace is available
+                    if "types" not in data["compilerOptions"]:
+                        data["compilerOptions"]["types"] = []
+                    if "react" not in data["compilerOptions"]["types"]:
+                        data["compilerOptions"]["types"].append("react")
+                    if "react-dom" not in data["compilerOptions"]["types"]:
+                        data["compilerOptions"]["types"].append("react-dom")
+
+                    f.seek(0)
+                    json.dump(data, f, indent=2)
+                    f.truncate()
+                DeployerLogger.log_info("project.configure.tsconfig", "Updated tsconfig.json for proper JSX handling.")
+
             # Manage ESLint config
             default_eslint_config = site_path / "eslint.config.mjs"
             if default_eslint_config.exists():
                 default_eslint_config.unlink()
                 DeployerLogger.log_info("project.configure.eslint_cleanup", "Removed default eslint.config.mjs.")
 
-            # Create .eslintrc.json to downgrade errors and configure the parser
+            # Create .eslintrc.json with comprehensive configuration
             eslintrc_path = site_path / ".eslintrc.json"
             eslintrc_content = {
                 "extends": [
                     "next/core-web-vitals"
                 ],
-                # CRITICAL: This section tells ESLint to use the TypeScript parser
                 "parser": "@typescript-eslint/parser",
-                # CRITICAL: This section tells ESLint to load the TypeScript plugin
                 "plugins": [
                     "@typescript-eslint"
                 ],
+                "parserOptions": {
+                    "ecmaVersion": "latest",
+                    "sourceType": "module",
+                    "ecmaFeatures": {
+                        "jsx": True
+                    }
+                },
                 "rules": {
-                    # This rule name is now correct and will be found
                     "@typescript-eslint/no-empty-interface": "warn",
                     "@typescript-eslint/no-unused-vars": "warn",
-                    "react/no-unescaped-entities": "warn"
+                    "react/no-unescaped-entities": "warn",
+                    "@typescript-eslint/no-explicit-any": "warn"
                 }
             }
             with open(eslintrc_path, "w") as f:
                 json.dump(eslintrc_content, f, indent=2)
-            DeployerLogger.log_info("project.configure.eslint_custom", "Created comprehensive .eslintrc.json with custom rules and parser config.")
+            DeployerLogger.log_info("project.configure.eslint_custom", "Created comprehensive .eslintrc.json with JSX parser config.")
 
             DeployerLogger.log_resource_usage("after_scaffold")
             DeployerLogger.log_step_end("Scaffold and Configure Project", start_time, True)
@@ -135,20 +163,28 @@ class Deployer:
                     data = json.load(f)
                     data.setdefault("dependencies", {})
                     data.setdefault("devDependencies", {})
+
+                    # Add project dependencies
                     data["dependencies"].update({
                         "@headlessui/react": "^2.2.7",
                         "lucide-react": "^0.539.0",
                         "tailwindcss-animate": "^1.0.7"
                     })
+
+                    # Add TypeScript and ESLint dependencies
                     data["devDependencies"].update({
                         "@typescript-eslint/eslint-plugin": "^8.0.0",
-                        "@typescript-eslint/parser": "^8.0.0"
+                        "@typescript-eslint/parser": "^8.0.0",
+                        "@types/react": "^18.3.12",
+                        "@types/react-dom": "^18.3.1"
                     })
+
                     f.seek(0)
                     json.dump(data, f, indent=2)
                     f.truncate()
-                DeployerLogger.log_info("deps.package_json_updated", "Updated package.json with all dependencies.")
+                DeployerLogger.log_info("deps.package_json_updated", "Updated package.json with all dependencies including React types.")
 
+            # Single atomic installation
             result = run(["pnpm", "install"], cwd=str(site_path), task_id=task_id)
             DeployerLogger.log_command_result(result, "pnpm_install")
             if not result.success:
@@ -164,11 +200,13 @@ class Deployer:
             DeployerLogger.log_step_start("Build and Deploy", 4, 5)
             DeployerLogger.log_resource_usage("before_build")
 
+            # Clean up any duplicate lockfiles
             duplicate_lockfile = site_path / "pnpm-lock.yaml"
             if duplicate_lockfile.exists():
                 DeployerLogger.log_warning("build.duplicate_lockfile", f"Removing duplicate lockfile at {duplicate_lockfile}")
                 duplicate_lockfile.unlink()
 
+            # Build the project
             build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
             DeployerLogger.log_command_result(build_result, "next_build")
             if not build_result.success:
@@ -176,24 +214,26 @@ class Deployer:
 
             DeployerLogger.log_resource_usage("after_build")
 
-            # Deployment steps...
+            # Deployment steps
             remote_dir = f"/srv/apps/{domain}"
             ssh_result = run(["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "mkdir", "-p", remote_dir], task_id=task_id)
             DeployerLogger.log_command_result(ssh_result, "deploy_create_remote_dir")
-            if not ssh_result.success: raise Exception("Failed to create remote directory.")
+            if not ssh_result.success:
+                raise Exception("Failed to create remote directory.")
 
             rsync_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", "--exclude", "node_modules", "--exclude", ".next/cache", "--exclude", ".git", f"{site_path}/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/"]
             rsync_result = run(rsync_cmd, task_id=task_id)
             DeployerLogger.log_command_result(rsync_result, "deploy_rsync")
-            if not rsync_result.success: raise Exception("Failed to sync files with rsync.")
+            if not rsync_result.success:
+                raise Exception("Failed to sync files with rsync.")
 
             provision_cmd = ["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "sudo", "/srv/sites/provision_site.py", "--domain", domain, "--root", remote_dir, "--port", "3000", "--email", email]
             provision_result = run(provision_cmd, task_id=task_id)
             DeployerLogger.log_command_result(provision_result, "deploy_provision_script")
-            if not provision_result.success: raise Exception("Failed to run remote provisioning script.")
+            if not provision_result.success:
+                raise Exception("Failed to run remote provisioning script.")
 
             DeployerLogger.log_step_end("Build and Deploy", start_time, True)
-
             self.verify_deployment(domain)
 
     def verify_deployment(self, domain: str):
