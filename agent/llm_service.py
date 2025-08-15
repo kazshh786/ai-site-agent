@@ -209,7 +209,113 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
             raise
 
 def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
+    REACT_TYPESCRIPT_GUIDELINES = """
+## Critical TypeScript/React Guidelines - MUST FOLLOW EXACTLY:
+
+1. **Import Statements**:
+   ```typescript
+   // For React 18+ with Next.js, NO NEED to import React explicitly
+   // ONLY import React if using React.FC or React.ComponentType
+   import { useState, useEffect } from 'react'; // Import hooks directly
+   ```
+
+2. **Component Definition - Use ONE of these patterns**:
+
+   **Option A - Implicit Typing (PREFERRED):**
+   ```typescript
+   interface ComponentProps {
+     title?: string;
+     className?: string;
+   }
+
+   const ComponentName = ({ title, className = '' }: ComponentProps) => {
+     return <div className={className}>{title}</div>;
+   };
+   ```
+
+   **Option B - Explicit React.FC (if needed):**
+   ```typescript
+   import React from 'react';
+
+   interface ComponentProps {
+     title?: string;
+   }
+
+   const ComponentName: React.FC<ComponentProps> = ({ title }) => {
+     return <div>{title}</div>;
+   };
+   ```
+
+3. **NEVER use JSX.Element as return type**:
+   ❌ Bad: `const MyComponent = (): JSX.Element => {`
+   ✅ Good: `const MyComponent = () => {` (implicit)
+   ✅ Good: `const MyComponent: React.FC = () => {` (explicit)
+
+4. **Interface Definitions - Always meaningful**:
+   ❌ Bad: `interface HeaderProps {}`
+   ✅ Good: `interface HeaderProps { title?: string; showNav?: boolean; }`
+
+5. **Props Usage - Avoid unused variables**:
+   ❌ Bad: `const Footer = (props: FooterProps) => { // props never used`
+   ✅ Good: `const Footer = ({ links, copyright }: FooterProps) => {`
+   ✅ Good: `const Footer = (_props: FooterProps) => {` // If truly unused, prefix with _
+
+6. **String Escaping in JSX**:
+   ❌ Bad: `<p>"Don't worry"</p>`
+   ✅ Good: `<p>&quot;Don&apos;t worry&quot;</p>`
+   ✅ Good: `<p>{'Don\\'t worry'}</p>` (JS string)
+
+7. **Hooks Usage**:
+   ```typescript
+   'use client'; // Add this directive at the top if using hooks
+
+   import { useState, useEffect } from 'react';
+
+   const Component = () => {
+     const [isOpen, setIsOpen] = useState<boolean>(false);
+     // ... rest of component
+   };
+   ```
+
+8. **Component Structure Template**:
+   ```typescript
+   // No React import needed for React 18+
+   import { useState } from 'react'; // Only if using hooks
+   import Link from 'next/link';
+
+   interface ComponentProps {
+     title?: string;
+     className?: string;
+   }
+
+   const ComponentName = ({ title = 'Default Title', className = '' }: ComponentProps) => {
+     // Component logic here
+
+     return (
+       <div className={className}>
+         {title && <h2>{title}</h2>}
+         <Link href="/about">About</Link>
+       </div>
+     );
+   };
+
+   export default ComponentName;
+   ```
+
+9. **TypeScript Best Practices**:
+   - Never use `any` type - use `unknown` or specific types
+   - Use optional chaining: `data?.property`
+   - Provide default values in destructuring: `{ title = 'Default' }`
+   - Type all function parameters and return values when not obvious
+
+10. **Next.js Specific**:
+    - Use `Link` from 'next/link' for internal navigation
+    - Use `Image` from 'next/image' for images with width/height
+    - Add 'use client' directive only when using browser-specific features
+"""
     prompt = f"""
+    {REACT_TYPESCRIPT_GUIDELINES}
+
     You are a senior React/Next.js developer specializing in Tailwind CSS.
     Your task is to create the code for a single, reusable React component.
 
@@ -219,23 +325,18 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
     {blueprint.model_dump_json(by_alias=True, indent=2)}
 
     **CRITICAL INSTRUCTIONS:**
-    1.  **TypeScript First:**
-        - **NEVER use the `any` type.** Use `unknown` or more specific types.
-        - **Create a specific `interface` for the component's props.** Infer the prop names and types from the `props` object for this component in the blueprint above. For example, if the blueprint has `"props": {{"title": "Hello", "items": []}}`, create `interface {component_name}Props {{ title: string; items: string[]; }}`.
-        - Ensure all variables and functions are fully typed.
-    2.  **Styling:** Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
-    3.  **Icon Usage:** ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
-    4.  **Character Escaping (JSX TEXT ONLY):**
-        - Replace apostrophes with &apos; in JSX text: <p>Don&apos;t worry</p>
-        - Replace quotes with &quot; in JSX text: <p>He said &quot;hello&quot;</p>
-        - NEVER escape characters in imports, strings, or other code.
-    5.  **Next.js Best Practices:**
-        - Use `<Link href="...">` for internal navigation.
-        - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
-        - Add `"use client";` at the top ONLY if you use hooks like `useState`.
-        - **React Hook Rules**: NEVER call React Hooks inside conditions, loops, or nested functions. All Hooks must be called at the top level of the component.
-        - **NEVER place JSX comments inside the opening tag of a component.** Place them on the line above.
-    6.  **Output:** Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
+    - Follow the TypeScript guidelines above EXACTLY
+    - Never use JSX.Element return types
+    - Define meaningful interfaces (not empty ones)
+    - Use all props or destructure selectively
+    - Escape quotes properly in JSX
+    - Make the component production-ready
+    - Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
+    - ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
+    - Use `<Link href="...">` for internal navigation.
+    - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
+    - Add `"use client";` at the top ONLY if you use hooks like `useState`.
+    - Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
     """
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
 
