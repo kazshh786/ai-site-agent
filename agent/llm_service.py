@@ -167,14 +167,21 @@ def _generate_code(prompt: str, component_name: str, task_id: str, available_com
 
 # --- Blueprint and Component Generation Functions (Unchanged) ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def get_site_blueprint(company: str, industry: str, task_id: str) -> Optional[SiteBlueprint]:
-    with _span("get_site_blueprint", company=company, industry=industry):
-        log_extra = {"company": company, "industry": industry, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}", "task_id": task_id}
+def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optional[SiteBlueprint]:
+    with _span("get_site_blueprint", company=company, brief=brief):
+        log_extra = {"company": company, "brief": brief, "model": f"tuned-endpoint-{TUNED_ENDPOINT_ID}", "task_id": task_id}
         log.info("🧠 Requesting AI for: get_site_blueprint (tuned model)", extra=log_extra)
+
+        company_text = f"for the company: {company}" if company else "for the company mentioned in the brief"
         user_prompt_text = (
-            f"Generate a modern SaaS website blueprint for {company} "
-            f"in the {industry} industry. Output the blueprint as a JSON object strictly "
-            "following the provided schema, including pages, sections, and components."
+            f"You are an expert website architect. Your task is to analyze the following detailed client brief "
+            f"and generate a complete JSON site blueprint that strictly follows the provided schema. "
+            f"The company name might be specified in the brief. If it is, you must use it. "
+            f"Ensure you create all the pages, services, and specific features mentioned.\n\n"
+            f"--- CLIENT BRIEF ---\n"
+            f"{brief}\n"
+            f"--- END BRIEF ---\n\n"
+            f"Now, generate the complete JSON blueprint {company_text}."
         )
         request = aiplatform.GenerateContentRequest(
             model=TUNED_ENDPOINT_PATH,
@@ -202,7 +209,113 @@ def get_site_blueprint(company: str, industry: str, task_id: str) -> Optional[Si
             raise
 
 def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
+    REACT_TYPESCRIPT_GUIDELINES = """
+## Critical TypeScript/React Guidelines - MUST FOLLOW EXACTLY:
+
+1. **Import Statements**:
+   ```typescript
+   // For React 18+ with Next.js, NO NEED to import React explicitly
+   // ONLY import React if using React.FC or React.ComponentType
+   import { useState, useEffect } from 'react'; // Import hooks directly
+   ```
+
+2. **Component Definition - Use ONE of these patterns**:
+
+   **Option A - Implicit Typing (PREFERRED):**
+   ```typescript
+   interface ComponentProps {
+     title?: string;
+     className?: string;
+   }
+
+   const ComponentName = ({ title, className = '' }: ComponentProps) => {
+     return <div className={className}>{title}</div>;
+   };
+   ```
+
+   **Option B - Explicit React.FC (if needed):**
+   ```typescript
+   import React from 'react';
+
+   interface ComponentProps {
+     title?: string;
+   }
+
+   const ComponentName: React.FC<ComponentProps> = ({ title }) => {
+     return <div>{title}</div>;
+   };
+   ```
+
+3. **NEVER use JSX.Element as return type**:
+   ❌ Bad: `const MyComponent = (): JSX.Element => {`
+   ✅ Good: `const MyComponent = () => {` (implicit)
+   ✅ Good: `const MyComponent: React.FC = () => {` (explicit)
+
+4. **Interface Definitions - Always meaningful**:
+   ❌ Bad: `interface HeaderProps {}`
+   ✅ Good: `interface HeaderProps { title?: string; showNav?: boolean; }`
+
+5. **Props Usage - Avoid unused variables**:
+   ❌ Bad: `const Footer = (props: FooterProps) => { // props never used`
+   ✅ Good: `const Footer = ({ links, copyright }: FooterProps) => {`
+   ✅ Good: `const Footer = (_props: FooterProps) => {` // If truly unused, prefix with _
+
+6. **String Escaping in JSX**:
+   ❌ Bad: `<p>"Don't worry"</p>`
+   ✅ Good: `<p>&quot;Don&apos;t worry&quot;</p>`
+   ✅ Good: `<p>{'Don\\'t worry'}</p>` (JS string)
+
+7. **Hooks Usage**:
+   ```typescript
+   'use client'; // Add this directive at the top if using hooks
+
+   import { useState, useEffect } from 'react';
+
+   const Component = () => {
+     const [isOpen, setIsOpen] = useState<boolean>(false);
+     // ... rest of component
+   };
+   ```
+
+8. **Component Structure Template**:
+   ```typescript
+   // No React import needed for React 18+
+   import { useState } from 'react'; // Only if using hooks
+   import Link from 'next/link';
+
+   interface ComponentProps {
+     title?: string;
+     className?: string;
+   }
+
+   const ComponentName = ({ title = 'Default Title', className = '' }: ComponentProps) => {
+     // Component logic here
+
+     return (
+       <div className={className}>
+         {title && <h2>{title}</h2>}
+         <Link href="/about">About</Link>
+       </div>
+     );
+   };
+
+   export default ComponentName;
+   ```
+
+9. **TypeScript Best Practices**:
+   - Never use `any` type - use `unknown` or specific types
+   - Use optional chaining: `data?.property`
+   - Provide default values in destructuring: `{ title = 'Default' }`
+   - Type all function parameters and return values when not obvious
+
+10. **Next.js Specific**:
+    - Use `Link` from 'next/link' for internal navigation
+    - Use `Image` from 'next/image' for images with width/height
+    - Add 'use client' directive only when using browser-specific features
+"""
     prompt = f"""
+    {REACT_TYPESCRIPT_GUIDELINES}
+
     You are a senior React/Next.js developer specializing in Tailwind CSS.
     Your task is to create the code for a single, reusable React component.
 
@@ -212,23 +325,18 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
     {blueprint.model_dump_json(by_alias=True, indent=2)}
 
     **CRITICAL INSTRUCTIONS:**
-    1.  **TypeScript First:**
-        - **NEVER use the `any` type.** Use `unknown` or more specific types.
-        - **Create a specific `interface` for the component's props.** Infer the prop names and types from the `props` object for this component in the blueprint above. For example, if the blueprint has `"props": {{"title": "Hello", "items": []}}`, create `interface {component_name}Props {{ title: string; items: string[]; }}`.
-        - Ensure all variables and functions are fully typed.
-    2.  **Styling:** Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
-    3.  **Icon Usage:** ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
-    4.  **Character Escaping (JSX TEXT ONLY):**
-        - Replace apostrophes with &apos; in JSX text: <p>Don&apos;t worry</p>
-        - Replace quotes with &quot; in JSX text: <p>He said &quot;hello&quot;</p>
-        - NEVER escape characters in imports, strings, or other code.
-    5.  **Next.js Best Practices:**
-        - Use `<Link href="...">` for internal navigation.
-        - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
-        - Add `"use client";` at the top ONLY if you use hooks like `useState`.
-        - **React Hook Rules**: NEVER call React Hooks inside conditions, loops, or nested functions. All Hooks must be called at the top level of the component.
-        - **NEVER place JSX comments inside the opening tag of a component.** Place them on the line above.
-    6.  **Output:** Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
+    - Follow the TypeScript guidelines above EXACTLY
+    - Never use JSX.Element return types
+    - Define meaningful interfaces (not empty ones)
+    - Use all props or destructure selectively
+    - Escape quotes properly in JSX
+    - Make the component production-ready
+    - Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
+    - ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
+    - Use `<Link href="...">` for internal navigation.
+    - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
+    - Add `"use client";` at the top ONLY if you use hooks like `useState`.
+    - Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
     """
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
 
@@ -340,7 +448,8 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     **CRITICAL INSTRUCTIONS:**
     1.  **TypeScript:**
         - **NEVER use the `any` type.**
-        - Define a props interface, even if it's empty: `interface HeaderProps {{}}`
+        - **AVOID empty interfaces** - use `{{}}` directly or add meaningful properties
+        - If you need to define props, add at least one optional property like: `interface HeaderProps {{ className?: string; }}`
         - Ensure all variables (like for mobile menu state) and functions are fully typed.
     2.  **Functionality:**
         - Add `"use client";` at the top because it will use `useState` for the mobile menu.
@@ -361,7 +470,8 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     **CRITICAL INSTRUCTIONS:**
     1.  **TypeScript:**
         - **NEVER use the `any` type.**
-        - Define a props interface, even if it's empty: `interface FooterProps {{}}`
+        - **AVOID empty interfaces** - use `{{}}` directly or add meaningful properties
+        - If you need to define props, add at least one optional property like: `interface FooterProps {{ className?: string; }}`
         - Ensure all variables and functions are fully typed.
     2.  **Content:**
         - Show the copyright notice using the current year: "© {time.strftime('%Y')} {client}".
@@ -437,7 +547,12 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
         - Available components: {str(component_filenames)}
         - Import using: `import ComponentName from '@/components/ComponentName';`
         - If a component is NOT in the available list, you MUST use the `Placeholder` component. For example: `import Placeholder from '@/components/Placeholder';` and render it like `<Placeholder componentName="MissingComponentName" />`.
-    5.  **Logic:**
+    5.  **CRITICAL PLACEHOLDER RENDERING:**
+        - When rendering Placeholder components, NEVER spread component.props that might contain a conflicting componentName property.
+        - Use this exact pattern: `<Placeholder key={{componentIndex}} componentName={{component.component_name}} />`
+        - Do NOT use: `<Placeholder componentName={{component.component_name}} {{...component.props}} />`
+    6.  **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
+    7.  **Logic:**
         - Find the correct page object from the blueprint based on the slug.
         - If the slug is empty or undefined, default to the page where `page_path` is '/'.
         - If no matching page is found, render a "404 Not Found" message.
