@@ -436,6 +436,25 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
         - Configure the `content` array for the `app` and `components` directories.
         - Include the `tailwindcss-animate` plugin.
     3.  **Output:** Only output raw TypeScript code in a single ```ts code block.
+
+    The generated `next.config.ts` should look like this:
+    ```typescript
+    import type { Config } from "tailwindcss";
+
+    const config: Config = {
+      // ... other config
+    };
+    export default config;
+    ```
+    And the `next.config.js` should look like this:
+    ```javascript
+    /** @type {import('next').NextConfig} */
+    const nextConfig = {
+      output: 'standalone',
+    };
+
+    module.exports = nextConfig;
+    ```
     """
     return _generate_code(prompt, "tailwind.config.ts", task_id)
 
