@@ -448,7 +448,8 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     **CRITICAL INSTRUCTIONS:**
     1.  **TypeScript:**
         - **NEVER use the `any` type.**
-        - Define a props interface, even if it's empty: `interface HeaderProps {{}}`
+        - **AVOID empty interfaces** - use `{{}}` directly or add meaningful properties
+        - If you need to define props, add at least one optional property like: `interface HeaderProps {{ className?: string; }}`
         - Ensure all variables (like for mobile menu state) and functions are fully typed.
     2.  **Functionality:**
         - Add `"use client";` at the top because it will use `useState` for the mobile menu.
@@ -469,7 +470,8 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     **CRITICAL INSTRUCTIONS:**
     1.  **TypeScript:**
         - **NEVER use the `any` type.**
-        - Define a props interface, even if it's empty: `interface FooterProps {{}}`
+        - **AVOID empty interfaces** - use `{{}}` directly or add meaningful properties
+        - If you need to define props, add at least one optional property like: `interface FooterProps {{ className?: string; }}`
         - Ensure all variables and functions are fully typed.
     2.  **Content:**
         - Show the copyright notice using the current year: "© {time.strftime('%Y')} {client}".
@@ -545,8 +547,12 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
         - Available components: {str(component_filenames)}
         - Import using: `import ComponentName from '@/components/ComponentName';`
         - If a component is NOT in the available list, you MUST use the `Placeholder` component. For example: `import Placeholder from '@/components/Placeholder';` and render it like `<Placeholder componentName="MissingComponentName" />`.
-    5.  **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
-    6.  **Logic:**
+    5.  **CRITICAL PLACEHOLDER RENDERING:**
+        - When rendering Placeholder components, NEVER spread component.props that might contain a conflicting componentName property.
+        - Use this exact pattern: `<Placeholder key={{componentIndex}} componentName={{component.component_name}} />`
+        - Do NOT use: `<Placeholder componentName={{component.component_name}} {{...component.props}} />`
+    6.  **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
+    7.  **Logic:**
         - Find the correct page object from the blueprint based on the slug.
         - If the slug is empty or undefined, default to the page where `page_path` is '/'.
         - If no matching page is found, render a "404 Not Found" message.
