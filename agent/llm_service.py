@@ -35,6 +35,17 @@ PREDICTION_CLIENT = aiplatform.PredictionServiceClient(
     client_options={"api_endpoint": f"{TUNED_LOCATION}-aiplatform.googleapis.com"}
 )
 
+MASTER_PERSONA_PROMPT = """
+You are a world-class digital agency in a box, embodying three expert roles:
+Senior Full-Stack Developer: You have 15+ years of experience building clean, scalable, and production-ready web applications. You are a master of Next.js 15, TypeScript, and Tailwind CSS. Your code is always performant, secure, and follows the latest best practices.
+
+Lead UX/UI Designer: You create modern, beautiful, and intuitive user interfaces that rival those of leading tech companies like Apple and Stripe. Your designs are always user-centric, responsive, and adhere strictly to WCAG 2.1 AA accessibility standards, ensuring the site is usable by everyone.
+
+SEO Specialist: You are an expert in technical SEO. Every line of code you write considers its impact on search engine rankings. You use semantic HTML5, ensure proper meta tags and structured data, and prioritize fast load times for Core Web Vitals.
+
+Your mission is to take a client's brief and produce a complete, professional, and accessible website that requires no technical expertise from the client to appreciate.
+"""
+
 @contextmanager
 def _span(operation_name: str, **tags):
     """Context manager for automatic span lifecycle"""
@@ -209,135 +220,21 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
             raise
 
 def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
-    REACT_TYPESCRIPT_GUIDELINES = """
-## Critical TypeScript/React Guidelines - MUST FOLLOW EXACTLY:
-
-1. **Import Statements**:
-   ```typescript
-   // For React 18+ with Next.js, NO NEED to import React explicitly
-   // ONLY import React if using React.FC or React.ComponentType
-   import { useState, useEffect } from 'react'; // Import hooks directly
-   ```
-
-2. **Component Definition - Use ONE of these patterns**:
-
-   **Option A - Implicit Typing (PREFERRED):**
-   ```typescript
-   interface ComponentProps {
-     title?: string;
-     className?: string;
-   }
-
-   const ComponentName = ({ title, className = '' }: ComponentProps) => {
-     return <div className={className}>{title}</div>;
-   };
-   ```
-
-   **Option B - Explicit React.FC (if needed):**
-   ```typescript
-   import React from 'react';
-
-   interface ComponentProps {
-     title?: string;
-   }
-
-   const ComponentName: React.FC<ComponentProps> = ({ title }) => {
-     return <div>{title}</div>;
-   };
-   ```
-
-3. **NEVER use JSX.Element as return type**:
-   ❌ Bad: `const MyComponent = (): JSX.Element => {`
-   ✅ Good: `const MyComponent = () => {` (implicit)
-   ✅ Good: `const MyComponent: React.FC = () => {` (explicit)
-
-4. **Interface Definitions - Always meaningful**:
-   ❌ Bad: `interface HeaderProps {}`
-   ✅ Good: `interface HeaderProps { title?: string; showNav?: boolean; }`
-
-5. **Props Usage - Avoid unused variables**:
-   ❌ Bad: `const Footer = (props: FooterProps) => { // props never used`
-   ✅ Good: `const Footer = ({ links, copyright }: FooterProps) => {`
-   ✅ Good: `const Footer = (_props: FooterProps) => {` // If truly unused, prefix with _
-
-6. **String Escaping in JSX**:
-   ❌ Bad: `<p>"Don't worry"</p>`
-   ✅ Good: `<p>&quot;Don&apos;t worry&quot;</p>`
-   ✅ Good: `<p>{'Don\\'t worry'}</p>` (JS string)
-
-7. **Hooks Usage**:
-   ```typescript
-   'use client'; // Add this directive at the top if using hooks
-
-   import { useState, useEffect } from 'react';
-
-   const Component = () => {
-     const [isOpen, setIsOpen] = useState<boolean>(false);
-     // ... rest of component
-   };
-   ```
-
-8. **Component Structure Template**:
-   ```typescript
-   // No React import needed for React 18+
-   import { useState } from 'react'; // Only if using hooks
-   import Link from 'next/link';
-
-   interface ComponentProps {
-     title?: string;
-     className?: string;
-   }
-
-   const ComponentName = ({ title = 'Default Title', className = '' }: ComponentProps) => {
-     // Component logic here
-
-     return (
-       <div className={className}>
-         {title && <h2>{title}</h2>}
-         <Link href="/about">About</Link>
-       </div>
-     );
-   };
-
-   export default ComponentName;
-   ```
-
-9. **TypeScript Best Practices**:
-   - Never use `any` type - use `unknown` or specific types
-   - Use optional chaining: `data?.property`
-   - Provide default values in destructuring: `{ title = 'Default' }`
-   - Type all function parameters and return values when not obvious
-
-10. **Next.js Specific**:
-    - Use `Link` from 'next/link' for internal navigation
-    - Use `Image` from 'next/image' for images with width/height
-    - Add 'use client' directive only when using browser-specific features
-"""
     prompt = f"""
-    {REACT_TYPESCRIPT_GUIDELINES}
-
-    You are a senior React/Next.js developer specializing in Tailwind CSS.
-    Your task is to create the code for a single, reusable React component.
-
-    **Component Name:** `{component_name}`
-    **Client & Industry:** {blueprint.client_name}
-    **Full Website Blueprint (for context on props and content):**
-    {blueprint.model_dump_json(by_alias=True, indent=2)}
-
-    **CRITICAL INSTRUCTIONS:**
-    - Follow the TypeScript guidelines above EXACTLY
-    - Never use JSX.Element return types
-    - Define meaningful interfaces (not empty ones)
-    - Use all props or destructure selectively
-    - Escape quotes properly in JSX
-    - Make the component production-ready
-    - Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
-    - ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
-    - Use `<Link href="...">` for internal navigation.
-    - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
-    - Add `"use client";` at the top ONLY if you use hooks like `useState`.
-    - Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
-    """
+    {MASTER_PERSONA_PROMPT}
+Your immediate task is to create the code for a single, reusable React component based on the following details.
+**Component Name:** `{component_name}`
+**Client & Industry:** {blueprint.client_name}
+**Full Website Blueprint (for context on props and content):**
+{blueprint.model_dump_json(by_alias=True, indent=2)}
+**CRITICAL INSTRUCTIONS:**
+- Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
+- ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
+- Use `<Link href="...">` for internal navigation.
+- Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
+- Add `"use client";` at the top ONLY if you use hooks like `useState`.
+- Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
+"""
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
 
 def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
@@ -345,6 +242,7 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     if blueprint.design_system and blueprint.design_system.get("styleTokens"):
         font_family = blueprint.design_system["styleTokens"].get("font_family", "Inter")
     prompt = f"""
+    {MASTER_PERSONA_PROMPT}
     Generate the complete code for a root layout file (`layout.tsx`) for a Next.js 14+ App Router project.
 
     **CRITICAL INSTRUCTIONS:**
@@ -476,7 +374,8 @@ def get_globals_css_code(blueprint: SiteBlueprint, task_id: str) -> str:
     return f"{DEFAULT_CSS_VARIABLES}\n\n{ai_generated_css}"
 
 def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
-    prompt = """
+    prompt = f"""
+    {MASTER_PERSONA_PROMPT}
     Generate a complete `tailwind.config.ts` for a Next.js 14+ App Router project.
 
     **CRITICAL INSTRUCTIONS:**
@@ -553,21 +452,18 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
-    Generate a `Header.tsx` component for a Next.js project.
+    {MASTER_PERSONA_PROMPT}
 
+    Your task is to generate a `Header.tsx` component for a Next.js project with the following requirements.
     **CRITICAL INSTRUCTIONS:**
-    1.  **TypeScript:**
-        - **NEVER use the `any` type.**
-        - **AVOID empty interfaces** - use `{{}}` directly or add meaningful properties
-        - If you need to define props, add at least one optional property like: `interface HeaderProps {{ className?: string; }}`
-        - Ensure all variables (like for mobile menu state) and functions are fully typed.
-    2.  **Functionality:**
+    1.  **Functionality:**
         - Add `"use client";` at the top because it will use `useState` for the mobile menu.
         - Display the client name: "{client}".
         - Include navigation links for these pages: {page_links}. Use the `<Link>` component.
-        - Implement a working mobile menu toggle with a hamburger icon.
-    3.  **Styling:** Use Tailwind CSS and `lucide-react` for icons.
-    4.  **Output:** Only output the raw TSX code in a single ```tsx code block.
+        - Implement a working mobile menu toggle with a hamburger icon (`<button>`).
+        - The onClick handler for toggling the menu MUST only be attached to the <button> element. Do NOT add onClick handlers to the navigation `<Link>` elements inside the mobile menu.
+    2.  **Styling:** Use Tailwind CSS and `lucide-react` for icons.
+    3.  **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
     return _generate_code(prompt, "Header.tsx", task_id)
 
@@ -575,6 +471,7 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
+    {MASTER_PERSONA_PROMPT}
     Generate a `Footer.tsx` component for a Next.js project.
     
     **CRITICAL INSTRUCTIONS:**
@@ -592,7 +489,8 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     return _generate_code(prompt, "Footer.tsx", task_id)
 
 def get_placeholder_code(task_id: str) -> str:
-    prompt = """
+    prompt = f"""
+    {MASTER_PERSONA_PROMPT}
     Generate a `Placeholder.tsx` React component.
 
     **CRITICAL REQUIREMENTS:**
@@ -608,6 +506,7 @@ def get_placeholder_code(task_id: str) -> str:
 
 def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[str], task_id: str) -> str:
     prompt = f"""
+    {MASTER_PERSONA_PROMPT}
     You are an expert Next.js developer. Create the dynamic page component `app/[...slug]/page.tsx`.
 
     **TypeScript Type Definitions (for context):**
