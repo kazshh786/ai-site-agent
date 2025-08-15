@@ -365,24 +365,115 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     return _generate_code(prompt, "layout.tsx", task_id)
 
 def get_globals_css_code(blueprint: SiteBlueprint, task_id: str) -> str:
-    primary = "222.2 47.4% 11.2%"
-    secondary = "210 40% 96.1%"
-    if blueprint.design_system and blueprint.design_system.get("styleTokens"):
-        primary = blueprint.design_system["styleTokens"].get("primary_color", primary)
-        secondary = blueprint.design_system["styleTokens"].get("secondary_color", secondary)
-    prompt = f"""
-    Generate the complete CSS code for a `globals.css` file for a Next.js + Tailwind CSS project.
-    - It must include the base Tailwind directives (`@tailwind base;` etc.).
-    - It must define CSS variables in a `@layer base` block for the root element:
-      --background: 0 0% 100%;
-      --foreground: 222.2 47.4% 11.2%;
-      --border: 214.3 31.8% 91.4%;
-      --primary: {primary};
-      --secondary: {secondary};
-      /* Add other necessary CSS variables like ring, radius, etc. */
-    - Only output the raw CSS code in a single ```css code block.
     """
-    return _generate_code(prompt, "globals.css", task_id)
+    Generates the content for globals.css, ensuring essential CSS variables are always included,
+    while still using the unique primary and secondary colors from the AI blueprint.
+    """
+    # Set default fallback colors
+    primary_color = "222.2 47.4% 11.2%"
+    secondary_color = "210 40% 96.1%"
+
+    # Check the blueprint for AI-generated colors and use them if they exist
+    if blueprint.design_system and blueprint.design_system.get("styleTokens"):
+        primary_color = blueprint.design_system["styleTokens"].get("primary_color", primary_color)
+        secondary_color = blueprint.design_system["styleTokens"].get("secondary_color", secondary_color)
+
+    # Use an f-string to insert the unique, AI-driven colors into the CSS template
+    DEFAULT_CSS_VARIABLES = f"""
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {{
+  :root {{
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: {primary_color};
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: {secondary_color};
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+  }}
+
+  .dark {{
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }}
+}}
+
+@layer base {{
+  * {{
+    @apply border-border;
+  }}
+  body {{
+    @apply bg-background text-foreground;
+  }}
+}}
+"""
+
+    prompt = (
+        "Generate additional CSS styles for the 'globals.css' file. "
+        "The provided blueprint contains the color palette and typography. "
+        "The CSS should include modern design principles, be responsive, and visually appealing. "
+        "DO NOT include the '@tailwind' directives or the ':root' and '.dark' selectors for base variables, as they are already defined. "
+        "You can add styles for h1, h2, buttons, or other global elements."
+    )
+
+    ai_generated_css = _generate_code(
+        prompt,
+        "globals.css",
+        task_id
+    )
+
+    # Corrected return statement
+    return f"{DEFAULT_CSS_VARIABLES}\n\n{ai_generated_css}"
 
 def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     prompt = """
