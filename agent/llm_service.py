@@ -459,7 +459,7 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     return _generate_code(prompt, "tailwind.config.ts", task_id)
 
 def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
-    page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
+    page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
     Generate a `Header.tsx` component for a Next.js project.
@@ -481,7 +481,7 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     return _generate_code(prompt, "Header.tsx", task_id)
 
 def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
-    page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
+    page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
     Generate a `Footer.tsx` component for a Next.js project.
