@@ -432,7 +432,7 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     import type { Config } from "tailwindcss";
 
     const config: Config = {
-      // ... other config
+      # ... other config
     };
     export default config;
     ```
