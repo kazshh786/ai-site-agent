@@ -444,7 +444,8 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
         - Available components: {str(component_filenames)}
         - Import using: `import ComponentName from '@/components/ComponentName';`
         - If a component is NOT in the available list, you MUST use the `Placeholder` component. For example: `import Placeholder from '@/components/Placeholder';` and render it like `<Placeholder componentName="MissingComponentName" />`.
-    5.  **Logic:**
+    5.  **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
+    6.  **Logic:**
         - Find the correct page object from the blueprint based on the slug.
         - If the slug is empty or undefined, default to the page where `page_path` is '/'.
         - If no matching page is found, render a "404 Not Found" message.

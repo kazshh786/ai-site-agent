@@ -96,17 +96,28 @@ class Deployer:
                 default_eslint_config.unlink()
                 DeployerLogger.log_info("project.configure.eslint_cleanup", "Removed default eslint.config.mjs.")
 
+            # Create .eslintrc.json to downgrade errors and configure the parser
             eslintrc_path = site_path / ".eslintrc.json"
             eslintrc_content = {
-                "extends": "next/core-web-vitals",
+                "extends": [
+                    "next/core-web-vitals"
+                ],
+                # CRITICAL: This section tells ESLint to use the TypeScript parser
+                "parser": "@typescript-eslint/parser",
+                # CRITICAL: This section tells ESLint to load the TypeScript plugin
+                "plugins": [
+                    "@typescript-eslint"
+                ],
                 "rules": {
+                    # This rule name is now correct and will be found
                     "@typescript-eslint/no-empty-interface": "warn",
-                    "@typescript-eslint/no-unused-vars": "warn"
+                    "@typescript-eslint/no-unused-vars": "warn",
+                    "react/no-unescaped-entities": "warn"
                 }
             }
             with open(eslintrc_path, "w") as f:
                 json.dump(eslintrc_content, f, indent=2)
-            DeployerLogger.log_info("project.configure.eslint_custom", "Created .eslintrc.json with custom rules.")
+            DeployerLogger.log_info("project.configure.eslint_custom", "Created comprehensive .eslintrc.json with custom rules and parser config.")
 
             DeployerLogger.log_resource_usage("after_scaffold")
             DeployerLogger.log_step_end("Scaffold and Configure Project", start_time, True)
