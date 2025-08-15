@@ -431,8 +431,8 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     ```typescript
     import type { Config } from "tailwindcss";
 
-    const config: Config = {
-    };
+    const config: Config = {{
+    }};
     export default config;
     ```
     And the `next.config.js` should look like this:
