@@ -186,6 +186,16 @@ export default config;
         component_dir = site_path / "components"
         actual_component_filenames = os.listdir(component_dir) if component_dir.exists() else []
         page_tsx_code = get_dynamic_page_code(blueprint, actual_component_filenames, task_id=self.request.id)
+
+        # HACK: Force-correct the PageProps interface and params handling due to a persistent LLM generation issue.
+        faulty_interface = "interface PageProps {\n  params: Promise<{ slug?: string[] }>;\n}"
+        correct_interface = "interface PageProps {\n  params: { slug?: string[] };\n}"
+        page_tsx_code = page_tsx_code.replace(faulty_interface, correct_interface)
+
+        faulty_params = "const resolvedParams = await params;\n      const slug = resolvedParams.slug;"
+        correct_params = "const slug = params.slug;"
+        page_tsx_code = page_tsx_code.replace(faulty_params, correct_params)
+
         result = file_writer.write_file(site_path / "app" / "[...slug]" / "page.tsx", page_tsx_code)
         if not result.success:
             raise Exception(f"Failed to write dynamic page: {result.error}")
