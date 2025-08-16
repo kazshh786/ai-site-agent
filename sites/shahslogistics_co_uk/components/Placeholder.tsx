@@ -39,7 +39,7 @@ export default function Placeholder({ componentName }: PlaceholderProps): JSX.El
       aria-label={`Component ${componentName} failed to load`}
     >
       <p className="font-semibold text-lg">
-        Uh oh! We couldn't load the <span className="font-bold text-yellow-900">"{componentName}"</span> component.
+        Uh oh! We couldn&apos;t load the <span className="font-bold text-yellow-900">&quot;{componentName}&quot;</span> component.
         <br />
         Please check your connection or try again later.
       </p>

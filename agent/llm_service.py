@@ -508,6 +508,7 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     - You MUST import the `Config` type from tailwindcss: `import type {{ Config }} from "tailwindcss";`
     - You MUST define the config object with this type: `const config: Config = {{ ... }}`
     2. **Configuration:**
+    - The `darkMode` property MUST be set to `"class"`.
     - You MUST extend the Tailwind theme to use CSS variables for colors.
     - The `colors` object in the theme should look EXACTLY like this, using HSL variables:
     ```typescript
