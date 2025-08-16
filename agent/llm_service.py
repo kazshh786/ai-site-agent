@@ -573,7 +573,7 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
 
 
 def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
-    page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
+    page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
     {MASTER_PERSONA_PROMPT}
@@ -592,7 +592,7 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     return _generate_code(prompt, "Header.tsx", task_id)
 
 def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
-    page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
+    page_links = ", ".join([f"'{page.page_name}'" for page in blueprint.pages])
     client = blueprint.client_name
     prompt = f"""
     {MASTER_PERSONA_PROMPT}
@@ -647,8 +647,8 @@ interface Section {{{{
 // THIS MUST EXACTLY MATCH THE PYTHON SCHEMA
 interface Page {{{{
   id: string;
-  name: string; // Use 'name' for the page title
-  path: string; // Use 'path' for the URL slug
+  page_name: string; // Use 'page_name' for the page title
+  page_path: string; // Use 'page_path' for the URL slug
   sections: Section[];
 }}}}
 ```
