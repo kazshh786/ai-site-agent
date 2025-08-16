@@ -1,9 +1,9 @@
-# agent/llm_service.py - Corrected with fix for validation pipeline
+# agent/llm_service.py
 import re
 import json
 import time
 import logging
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict, Any
 from contextlib import contextmanager
 
 from vertexai import init as vertexai_init
@@ -24,7 +24,7 @@ TUNED_ENDPOINT_ID = "9038580416109346816"
 TUNED_ENDPOINT_PATH = f"projects/{TUNED_PROJECT_ID}/locations/{TUNED_LOCATION}/endpoints/{TUNED_ENDPOINT_ID}"
 GENERAL_PROJECT_ID = "automated-ray-463204-i2"
 GENERAL_LOCATION = "us-central1"
-GENERAL_MODEL_NAME = "gemini-2.5-flash" 
+GENERAL_MODEL_NAME = "gemini-2.5-flash"
 
 # --- Client Initialization (Unchanged) ---
 try:
@@ -176,7 +176,7 @@ def _generate_code(prompt: str, component_name: str, task_id: str, available_com
             log.error(f"An unexpected error occurred with the tuned model during code generation: {e}", extra=log_extra)
             raise
 
-# --- Blueprint and Component Generation Functions (Unchanged) ---
+# --- Blueprint and Component Generation Functions (New) ---
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optional[SiteBlueprint]:
     with _span("get_site_blueprint", company=company, brief=brief):
@@ -185,14 +185,16 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
 
         company_text = f"for the company: {company}" if company else "for the company mentioned in the brief"
         user_prompt_text = (
-            f"You are an expert website architect. Your task is to analyze the following detailed client brief "
-            f"and generate a complete JSON site blueprint that strictly follows the provided schema. "
-            f"The company name might be specified in the brief. If it is, you must use it. "
-            f"Ensure you create all the pages, services, and specific features mentioned.\n\n"
+            f"You are a world-class website architect. Your task is to analyze the following client brief and strictly generate a complete JSON site blueprint. "
+            f"You MUST fill in the fields of the provided JSON template. Do NOT add any extra fields, alter the keys, or change the nested structure.\n\n"
             f"--- CLIENT BRIEF ---\n"
             f"{brief}\n"
             f"--- END BRIEF ---\n\n"
-            f"Now, generate the complete JSON blueprint {company_text}."
+            f"Now, generate the complete JSON blueprint {company_text} that strictly adheres to this structure:\n"
+            f"```json\n"
+            f"{SiteBlueprint.model_json_schema(by_alias=True, indent=2)}\n"
+            f"```\n\n"
+            f"Your entire response MUST be only the raw JSON, without any explanations or markdown.\n"
         )
         request = aiplatform.GenerateContentRequest(
             model=TUNED_ENDPOINT_PATH,
@@ -224,100 +226,100 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
 ## Critical TypeScript/React Guidelines - MUST FOLLOW EXACTLY:
 
 1. **Import Statements**:
-   ```typescript
-   // For React 18+ with Next.js, NO NEED to import React explicitly
-   // ONLY import React if using React.FC or React.ComponentType
-   import {{ useState, useEffect }} from 'react'; // Import hooks directly
-   ```
+    ```typescript
+    // For React 18+ with Next.js, NO NEED to import React explicitly
+    // ONLY import React if using React.FC or React.ComponentType
+    import {{ useState, useEffect }} from 'react'; // Import hooks directly
+    ```
 
 2. **Component Definition - Use ONE of these patterns**:
 
-   **Option A - Implicit Typing (PREFERRED):**
-   ```typescript
-   interface ComponentProps {{
-     title?: string;
-     className?: string;
-   }}
+    **Option A - Implicit Typing (PREFERRED):**
+    ```typescript
+    interface ComponentProps {{
+      title?: string;
+      className?: string;
+    }}
 
-   const ComponentName = ({{ title, className = '' }}: ComponentProps) => {{
-     return <div className={{className}}>{{title}}</div>;
-   }};
-   ```
+    const ComponentName = ({{ title, className = '' }}: ComponentProps) => {{
+      return <div className={{className}}>{{title}}</div>;
+    }};
+    ```
 
-   **Option B - Explicit React.FC (if needed):**
-   ```typescript
-   import React from 'react';
+    **Option B - Explicit React.FC (if needed):**
+    ```typescript
+    import React from 'react';
 
-   interface ComponentProps {{
-     title?: string;
-   }}
+    interface ComponentProps {{
+      title?: string;
+    }}
 
-   const ComponentName: React.FC<ComponentProps> = ({{ title }}) => {{
-     return <div>{{title}}</div>;
-   }};
-   ```
+    const ComponentName: React.FC<ComponentProps> = ({{ title }}) => {{
+      return <div>{{title}}</div>;
+    }};
+    ```
 
 3. **NEVER use JSX.Element as return type**:
-   ❌ Bad: `const MyComponent = (): JSX.Element => {{`
-   ✅ Good: `const MyComponent = () => {{` (implicit)
-   ✅ Good: `const MyComponent: React.FC = () => {{` (explicit)
+    ❌ Bad: `const MyComponent = (): JSX.Element => {{`
+    ✅ Good: `const MyComponent = () => {{` (implicit)
+    ✅ Good: `const MyComponent: React.FC = () => {{` (explicit)
 
 4. **Interface Definitions - Always meaningful**:
-   ❌ Bad: `interface HeaderProps {{}}`
-   ✅ Good: `interface HeaderProps {{ title?: string; showNav?: boolean; }}`
+    ❌ Bad: `interface HeaderProps {{}}`
+    ✅ Good: `interface HeaderProps {{ title?: string; showNav?: boolean; }}`
 
 5. **Props Usage - Avoid unused variables**:
-   ❌ Bad: `const Footer = (props: FooterProps) => {{ // props never used`
-   ✅ Good: `const Footer = ({{ links, copyright }}: FooterProps) => {{`
-   ✅ Good: `const Footer = (_props: FooterProps) => {{` // If truly unused, prefix with _
+    ❌ Bad: `const Footer = (props: FooterProps) => {{ // props never used`
+    ✅ Good: `const Footer = ({{ links, copyright }}: FooterProps) => {{`
+    ✅ Good: `const Footer = (_props: FooterProps) => {{` // If truly unused, prefix with _
 
 6. **String Escaping in JSX**:
-   ❌ Bad: `<p>"Don't worry"</p>`
-   ✅ Good: `<p>&quot;Don&apos;t worry&quot;</p>`
-   ✅ Good: `<p>{{'Don\\'t worry'}}</p>` (JS string)
+    ❌ Bad: `<p>"Don't worry"</p>`
+    ✅ Good: `<p>&quot;Don&apos;t worry&quot;</p>`
+    ✅ Good: `<p>{{'Don\\'t worry'}}</p>` (JS string)
 
 7. **Hooks Usage**:
-   ```typescript
-   'use client'; // Add this directive at the top if using hooks
+    ```typescript
+    'use client'; // Add this directive at the top if using hooks
 
-   import {{ useState, useEffect }} from 'react';
+    import {{ useState, useEffect }} from 'react';
 
-   const Component = () => {{
-     const [isOpen, setIsOpen] = useState<boolean>(false);
-     // ... rest of component
-   }};
-   ```
+    const Component = () => {{
+      const [isOpen, setIsOpen] = useState<boolean>(false);
+      // ... rest of component
+    }};
+    ```
 
 8. **Component Structure Template**:
-   ```typescript
-   // No React import needed for React 18+
-   import {{ useState }} from 'react'; // Only if using hooks
-   import Link from 'next/link';
+    ```typescript
+    // No React import needed for React 18+
+    import {{ useState }} from 'react'; // Only if using hooks
+    import Link from 'next/link';
 
-   interface ComponentProps {{
-     title?: string;
-     className?: string;
-   }}
+    interface ComponentProps {{
+      title?: string;
+      className?: string;
+    }}
 
-   const ComponentName = ({{ title = 'Default Title', className = '' }}: ComponentProps) => {{
-     // Component logic here
+    const ComponentName = ({{ title = 'Default Title', className = '' }}: ComponentProps) => {{
+      // Component logic here
 
-     return (
-       <div className={{className}}>
-         {{title && <h2>{{title}}</h2>}}
-         <Link href="/about">About</Link>
-       </div>
-     );
-   }};
+      return (
+        <div className={{className}}>
+          {{title && <h2>{{title}}</h2>}}
+          <Link href="/about">About</Link>
+        </div>
+      );
+    }};
 
-   export default ComponentName;
-   ```
+    export default ComponentName;
+    ```
 
 9. **TypeScript Best Practices**:
-   - Never use `any` type - use `unknown` or specific types
-   - Use optional chaining: `data?.property`
-   - Provide default values in destructuring: `{{ title = 'Default' }}`
-   - Type all function parameters and return values when not obvious
+    - Never use `any` type - use `unknown` or specific types
+    - Use optional chaining: `data?.property`
+    - Provide default values in destructuring: `{{ title = 'Default' }}`
+    - Type all function parameters and return values when not obvious
 
 10. **Next.js Specific**:
     - Use `Link` from 'next/link' for internal navigation
@@ -326,12 +328,22 @@ def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: s
 """
     prompt = f"""
     {MASTER_PERSONA_PROMPT}
-Your immediate task is to create the code for a single, reusable React component based on the following details.
+{REACT_TYPESCRIPT_GUIDELINES}
+
+Your immediate task is to create the code for a single, reusable React component.
+
 **Component Name:** `{component_name}`
 **Client & Industry:** {blueprint.client_name}
 **Full Website Blueprint (for context on props and content):**
 {blueprint.model_dump_json(by_alias=True, indent=2)}
+
 **CRITICAL INSTRUCTIONS:**
+- Follow the TypeScript guidelines above EXACTLY
+- Never use JSX.Element return types
+- Define meaningful interfaces (not empty ones)
+- Use all props or destructure selectively
+- Escape quotes properly in JSX
+- Make the component production-ready
 - Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
 - ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
 - Use `<Link href="...">` for internal navigation.
@@ -340,6 +352,7 @@ Your immediate task is to create the code for a single, reusable React component
 - Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
 """
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
+
 
 def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     font_family = "Inter"
@@ -350,19 +363,19 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     Generate the complete code for a root layout file (`layout.tsx`) for a Next.js 14+ App Router project.
 
     **CRITICAL INSTRUCTIONS:**
-    1.  **TypeScript:**
-        - **NEVER use the `any` type.**
-        - The root layout accepts a `children` prop. It MUST be typed as `React.ReactNode`.
-        - The function signature must be `export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{ ... }}`.
-    2.  **Structure:**
-        - Import and render the `Header` and `Footer` components.
-        - The `Header` must be right after the `<body>` tag.
-        - The `Footer` must be at the end, before the closing `</body>` tag.
-    3.  **Imports:**
-        - Use the `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`).
-        - Import the global stylesheet using the correct relative path: `import './globals.css';`
-    4.  **Font:** The font should be '{font_family}'.
-    5.  **Output:** Only output the raw TSX code in a single ```tsx code block.
+    1. **TypeScript:**
+    - **NEVER use the `any` type.**
+    - The root layout accepts a `children` prop. It MUST be typed as `React.ReactNode`.
+    - The function signature must be `export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{ ... }}`.
+    2. **Structure:**
+    - Import and render the `Header` and `Footer` components.
+    - The `Header` must be right after the `<body>` tag.
+    - The `Footer` must be at the end, before the closing `</body>` tag.
+    3. **Imports:**
+    - Use the `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`).
+    - Import the global stylesheet using the correct relative path: `import './globals.css';`
+    4. **Font:** The font should be '{font_family}'.
+    5. **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
     return _generate_code(prompt, "layout.tsx", task_id)
 
@@ -461,11 +474,11 @@ def get_globals_css_code(blueprint: SiteBlueprint, task_id: str) -> str:
 """
 
     prompt = (
-        "Generate additional CSS styles for the 'globals.css' file. "
-        "The provided blueprint contains the color palette and typography. "
-        "The CSS should include modern design principles, be responsive, and visually appealing. "
-        "DO NOT include the '@tailwind' directives or the ':root' and '.dark' selectors for base variables, as they are already defined. "
-        "You can add styles for h1, h2, buttons, or other global elements."
+        f"Generate additional CSS styles for the 'globals.css' file. "
+        f"The provided blueprint contains the color palette and typography. "
+        f"The CSS should include modern design principles, be responsive, and visually appealing. "
+        f"DO NOT include the '@tailwind' directives or the ':root' and '.dark' selectors for base variables, as they are already defined. "
+        f"You can add styles for h1, h2, buttons, or other global elements."
     )
 
     ai_generated_css = _generate_code(
@@ -483,72 +496,74 @@ def get_tailwind_config_code(blueprint: SiteBlueprint, task_id: str) -> str:
     Generate a complete `tailwind.config.ts` for a Next.js 14+ App Router project.
 
     **CRITICAL INSTRUCTIONS:**
-    1.  **TypeScript:**
-        - **NEVER use the `any` type.**
-        - You MUST import the `Config` type from tailwindcss: `import type { Config } from "tailwindcss";`
-        - You MUST define the config object with this type: `const config: Config = { ... }`
-    2.  **Configuration:**
-        - You MUST extend the Tailwind theme to use CSS variables for colors.
-        - The `colors` object in the theme should look EXACTLY like this, using HSL variables:
-          ```typescript
-          colors: {
-            border: 'hsl(var(--border))',
-            input: 'hsl(var(--input))',
-            ring: 'hsl(var(--ring))',
-            background: 'hsl(var(--background))',
-            foreground: 'hsl(var(--foreground))',
-            primary: {
-              DEFAULT: 'hsl(var(--primary))',
-              foreground: 'hsl(var(--primary-foreground))',
-            },
-            secondary: {
-              DEFAULT: 'hsl(var(--secondary))',
-              foreground: 'hsl(var(--secondary-foreground))',
-            },
-            destructive: {
-              DEFAULT: 'hsl(var(--destructive))',
-              foreground: 'hsl(var(--destructive-foreground))',
-            },
-            muted: {
-              DEFAULT: 'hsl(var(--muted))',
-              foreground: 'hsl(var(--muted-foreground))',
-            },
-            accent: {
-              DEFAULT: 'hsl(var(--accent))',
-              foreground: 'hsl(var(--accent-foreground))',
-            },
-            popover: {
-              DEFAULT: 'hsl(var(--popover))',
-              foreground: 'hsl(var(--popover-foreground))',
-            },
-            card: {
-              DEFAULT: 'hsl(var(--card))',
-              foreground: 'hsl(var(--card-foreground))',
-            },
-          }
-          ```
-        - Configure the `content` array for the `app` and `components` directories.
-        - Include the `tailwindcss-animate` plugin.
-    3.  **Output:** Only output raw TypeScript code in a single ```ts code block.
+    1. **TypeScript:**
+    - **NEVER use the `any` type.**
+    - You MUST import the `Config` type from tailwindcss: `import type {{ Config }} from "tailwindcss";`
+    - You MUST define the config object with this type: `const config: Config = {{ ... }}`
+    2. **Configuration:**
+    - You MUST extend the Tailwind theme to use CSS variables for colors.
+    - The `colors` object in the theme should look EXACTLY like this, using HSL variables:
+    ```typescript
+    colors: {{
+      border: 'hsl(var(--border))',
+      input: 'hsl(var(--input))',
+      ring: 'hsl(var(--ring))',
+      background: 'hsl(var(--background))',
+      foreground: 'hsl(var(--foreground))',
+      primary: {{
+        DEFAULT: 'hsl(var(--primary))',
+        foreground: 'hsl(var(--primary-foreground))',
+      }},
+      secondary: {{
+        DEFAULT: 'hsl(var(--secondary))',
+        foreground: 'hsl(var(--secondary-foreground))',
+      }},
+      destructive: {{
+        DEFAULT: 'hsl(var(--destructive))',
+        foreground: 'hsl(var(--destructive-foreground))',
+      }},
+      muted: {{
+        DEFAULT: 'hsl(var(--muted))',
+        foreground: 'hsl(var(--muted-foreground))',
+      }},
+      accent: {{
+        DEFAULT: 'hsl(var(--accent))',
+        foreground: 'hsl(var(--accent-foreground))',
+      }},
+      popover: {{
+        DEFAULT: 'hsl(var(--popover))',
+        foreground: 'hsl(var(--popover-foreground))',
+      }},
+      card: {{
+        DEFAULT: 'hsl(var(--card))',
+        foreground: 'hsl(var(--card-foreground))',
+      }},
+    }}
+    ```
+    - Configure the `content` array for the `app` and `components` directories.
+    - Include the `tailwindcss-animate` plugin.
+    3. **Output:** Only output raw TypeScript code in a single ```ts code block.
 
     The generated `next.config.ts` should look like this:
     ```typescript
-    import type { Config } from "tailwindcss";
+    import type {{ Config }} from "tailwindcss";
 
-    const config: Config = {{
-    }};
+    const config: Config = {{{{
+    }}}};
     export default config;
     ```
     And the `next.config.js` should look like this:
     ```javascript
-    /** @type {{import('next').NextConfig}} */
-    const nextConfig = {{
+    /** @type {{{{import('next').NextConfig}}}} */
+    const nextConfig = {{{{
       output: 'standalone',
-    }};
+    }}}};
+
     module.exports = nextConfig;
     ```
     """
     return _generate_code(prompt, "tailwind.config.ts", task_id)
+
 
 def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
     page_links = ", ".join([f"'{page.name}'" for page in blueprint.pages])
@@ -558,14 +573,14 @@ def get_header_code(blueprint: SiteBlueprint, task_id: str) -> str:
 
     Your task is to generate a `Header.tsx` component for a Next.js project with the following requirements.
     **CRITICAL INSTRUCTIONS:**
-    1.  **Functionality:**
+    1. **Functionality:**
         - Add `"use client";` at the top because it will use `useState` for the mobile menu.
         - Display the client name: "{client}".
         - Include navigation links for these pages: {page_links}. Use the `<Link>` component.
         - Implement a working mobile menu toggle with a hamburger icon (`<button>`).
         - The onClick handler for toggling the menu MUST only be attached to the <button> element. Do NOT add onClick handlers to the navigation `<Link>` elements inside the mobile menu.
-    2.  **Styling:** Use Tailwind CSS and `lucide-react` for icons.
-    3.  **Output:** Only output the raw TSX code in a single ```tsx code block.
+    2. **Styling:** Use Tailwind CSS and `lucide-react` for icons.
+    3. **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
     return _generate_code(prompt, "Header.tsx", task_id)
 
@@ -577,16 +592,16 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     Generate a `Footer.tsx` component for a Next.js project.
     
     **CRITICAL INSTRUCTIONS:**
-    1.  **TypeScript:**
+    1. **TypeScript:**
         - **NEVER use the `any` type.**
         - **AVOID empty interfaces** - use `{{}}` directly or add meaningful properties
-        - If you need to define props, add at least one optional property like: `interface FooterProps {{ className?: string; }}`
+        - If you need to define props, add at least one optional property like: `interface FooterProps {{{{ className?: string; }}}}`
         - Ensure all variables and functions are fully typed.
-    2.  **Content:**
+    2. **Content:**
         - Show the copyright notice using the current year: "© {time.strftime('%Y')} {client}".
         - Include navigation links for these pages: {page_links}. Use the `<Link>` component.
-    3.  **Styling:** Use Tailwind CSS.
-    4.  **Output:** Only output the raw TSX code in a single ```tsx code block.
+    3. **Styling:** Use Tailwind CSS.
+    4. **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
     return _generate_code(prompt, "Footer.tsx", task_id)
 
@@ -596,13 +611,13 @@ def get_placeholder_code(task_id: str) -> str:
     Generate a `Placeholder.tsx` React component.
 
     **CRITICAL REQUIREMENTS:**
-    1.  **TypeScript:**
+    1. **TypeScript:**
         - **NEVER use the `any` type.**
-        - Define a strict props interface: `interface PlaceholderProps {{ componentName: string; }}`
-        - The component signature must be `export default function Placeholder({{ componentName }}: PlaceholderProps) {{ ... }}`.
-    2.  **Styling:** Use Tailwind CSS with a distinct warning theme (e.g., yellow/orange background, border, and text).
-    3.  **Message:** Display a friendly message indicating that the component with `componentName` failed to load.
-    4.  **Output:** Output only the complete `.tsx` code in a ```tsx code block.
+        - Define a strict props interface: `interface PlaceholderProps {{{{ componentName: string; }}}}`
+        - The component signature must be `export default function Placeholder({{{{ componentName }}}}: PlaceholderProps) {{{{ ... }}}}`.
+    2. **Styling:** Use Tailwind CSS with a distinct warning theme (e.g., yellow/orange background, border, and text).
+    3. **Message:** Display a friendly message indicating that the component with `componentName` failed to load.
+    4. **Output:** Output only the complete `.tsx` code in a ```tsx code block.
     """
     return _generate_code(prompt, "Placeholder.tsx", task_id)
 
@@ -613,34 +628,34 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
 **TypeScript Type Definitions (for context):**
 You MUST use these interfaces to correctly type variables derived from the blueprint.
 ```tsx
-interface Component {{
+interface Component {{{{
   component_name: string;
   props: Record<string, unknown>;
-}}
-interface Section {{
+}}}}
+interface Section {{{{
   section_name: string;
   heading: string | null;
   components: Component[];
-}}
+}}}}
 // THIS MUST EXACTLY MATCH THE PYTHON SCHEMA
-interface Page {{
+interface Page {{{{
   id: string;
   name: string; // Use 'name' for the page title
   path: string; // Use 'path' for the URL slug
   sections: Section[];
-}}
+}}}}
 ```
 **CRITICAL NEXT.JS 15 REQUIREMENTS:**
 1.  Use this EXACT function signature:
     ```tsx
-    interface PageProps {{
-      params: Promise<{{ slug?: string[] }}>;
-    }}
-    export default async function DynamicPage({{ params }}: PageProps) {{
+    interface PageProps {{{{
+      params: Promise<{{{{ slug?: string[] }}}}>;
+    }}}}
+    export default async function DynamicPage({{{{ params }}}}: PageProps) {{{{
       const resolvedParams = await params;
       const slug = resolvedParams.slug;
       // ... rest of component
-    }}
+    }}}}
     ```
 2.  **TypeScript Requirements:**
     - **Use the type definitions provided above.** When you find a page, section, or component, type it correctly (e.g., `const page: Page | undefined = ...`, `const section: Section = ...`).
@@ -657,8 +672,8 @@ interface Page {{
     - If a component is NOT in the available list, you MUST use the `Placeholder` component. For example: `import Placeholder from '@/components/Placeholder';` and render it like `<Placeholder componentName="MissingComponentName" />`.
 5.  **CRITICAL PLACEHOLDER RENDERING:**
     - When rendering Placeholder components, NEVER spread component.props that might contain a conflicting componentName property.
-    - Use this exact pattern: `<Placeholder key={{componentIndex}} componentName={{component.component_name}} />`
-    - Do NOT use: `<Placeholder componentName={{component.component_name}} {{...component.props}} />`
+    - Use this exact pattern: `<Placeholder key={{{{componentIndex}}}} componentName={{{{component.component_name}}}} />`
+    - Do NOT use: `<Placeholder componentName={{{{component.component_name}}}} {{{{\.\.\.component.props}}}} />`
 6.  **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
 7.  **Logic:**
     - Find the correct page object from the blueprint based on the slug.
