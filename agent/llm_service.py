@@ -581,11 +581,10 @@ interface Page {{{{
 1.  Use this EXACT function signature:
     ```tsx
     interface PageProps {{{{
-      params: Promise<{{{{ slug?: string[] }}}}>;
+      params: {{ slug?: string[] }};
     }}}}
     export default async function DynamicPage({{{{ params }}}}: PageProps) {{{{
-      const resolvedParams = await params;
-      const slug = resolvedParams.slug;
+      const slug = params.slug;
       // ... rest of component
     }}}}
     ```
