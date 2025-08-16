@@ -184,6 +184,13 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
         log.info("🧠 Requesting AI for: get_site_blueprint (tuned model)", extra=log_extra)
 
         company_text = f"for the company: {company}" if company else "for the company mentioned in the brief"
+
+        # Get the JSON schema from Pydantic without the unsupported 'indent' parameter
+        schema_json = SiteBlueprint.model_json_schema(by_alias=True)
+
+        # Format the schema using Python's standard json library
+        formatted_schema = json.dumps(schema_json, indent=2)
+
         user_prompt_text = (
             f"You are a world-class website architect. Your task is to analyze the following client brief and strictly generate a complete JSON site blueprint. "
             f"You MUST fill in the fields of the provided JSON template. Do NOT add any extra fields, alter the keys, or change the nested structure.\n\n"
@@ -192,7 +199,7 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
             f"--- END BRIEF ---\n\n"
             f"Now, generate the complete JSON blueprint {company_text} that strictly adheres to this structure:\n"
             f"```json\n"
-            f"{SiteBlueprint.model_json_schema(by_alias=True, indent=2)}\n"
+            f"{formatted_schema}\n"
             f"```\n\n"
             f"Your entire response MUST be only the raw JSON, without any explanations or markdown.\n"
         )
