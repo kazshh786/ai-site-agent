@@ -30,6 +30,7 @@ class Section(BaseModel):
         return values
 
 class Page(BaseModel):
+    id: str
     page_name: str
     page_path: str
     sections: List[Section] = Field(default_factory=list)
@@ -42,6 +43,8 @@ class Page(BaseModel):
         values['page_name'] = values.get('pageName') or values.get('name') or f"Page_{values.get('id', 'unknown')}"
         path = values.get('pagePath') or values.get('path') or values.get('urlSlug') or f"/{values['page_name'].lower().replace(' ', '-')}"
         values['page_path'] = path if path.startswith('/') else f"/{path}"
+        # Generate an ID if it doesn't exist
+        values['id'] = values.get('id') or values.get('pageId') or values['page_name'].lower().replace(' ', '-')
         return values
 
 class SiteBlueprint(BaseModel):
