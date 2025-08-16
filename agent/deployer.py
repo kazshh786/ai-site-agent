@@ -235,11 +235,33 @@ module.exports = nextConfig;
             if not ssh_result.success:
                 raise Exception("Failed to create remote directory.")
 
-            rsync_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", "--exclude", "node_modules", "--exclude", ".next/cache", "--exclude", ".git", f"{site_path}/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/"]
-            rsync_result = run(rsync_cmd, task_id=task_id)
-            DeployerLogger.log_command_result(rsync_result, "deploy_rsync")
-            if not rsync_result.success:
-                raise Exception("Failed to sync files with rsync.")
+            # Sync the standalone output directory
+            rsync_standalone_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", f"{site_path}/.next/standalone/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/"]
+            rsync_standalone_result = run(rsync_standalone_cmd, task_id=task_id)
+            DeployerLogger.log_command_result(rsync_standalone_result, "deploy_rsync_standalone")
+            if not rsync_standalone_result.success:
+                raise Exception("Failed to sync standalone output with rsync.")
+
+            # Sync the public directory
+            rsync_public_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", f"{site_path}/public/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/public/"]
+            rsync_public_result = run(rsync_public_cmd, task_id=task_id)
+            DeployerLogger.log_command_result(rsync_public_result, "deploy_rsync_public")
+            if not rsync_public_result.success:
+                raise Exception("Failed to sync public directory with rsync.")
+
+            # Ensure the remote .next directory exists before syncing static assets
+            ssh_mkdir_next_cmd = ["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "mkdir", "-p", f"{remote_dir}/.next"]
+            ssh_mkdir_next_result = run(ssh_mkdir_next_cmd, task_id=task_id)
+            DeployerLogger.log_command_result(ssh_mkdir_next_result, "deploy_create_remote_next_dir")
+            if not ssh_mkdir_next_result.success:
+                raise Exception("Failed to create remote .next directory.")
+
+            # Sync the static assets directory
+            rsync_static_cmd = ["rsync", "-avz", "-e", f"ssh -i {DEPLOYER_KEY_PATH}", "--delete", f"{site_path}/.next/static/", f"{DEPLOYER_USER}@{DEPLOYER_HOST}:{remote_dir}/.next/static/"]
+            rsync_static_result = run(rsync_static_cmd, task_id=task_id)
+            DeployerLogger.log_command_result(rsync_static_result, "deploy_rsync_static")
+            if not rsync_static_result.success:
+                raise Exception("Failed to sync static assets with rsync.")
 
             provision_cmd = ["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "sudo", "/srv/sites/provision_site.py", "--domain", domain, "--root", remote_dir, "--port", "3000", "--email", email]
             provision_result = run(provision_cmd, task_id=task_id)
