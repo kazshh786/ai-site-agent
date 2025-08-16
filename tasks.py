@@ -32,14 +32,14 @@ def _imports():
     """Lazy import services to avoid circular dependencies."""
     from agent.llm_service import (
         get_site_blueprint, get_component_code, get_layout_code,
-        get_globals_css_code, get_tailwind_config_code, get_header_code,
+        get_globals_css_code, get_header_code,
         get_footer_code, get_placeholder_code, get_dynamic_page_code
     )
     from agent.deployer import Deployer
     from agent.image_service import get_images_from_pexels as fetch_images
     return (
         get_site_blueprint, get_component_code, get_layout_code,
-        get_globals_css_code, get_tailwind_config_code, get_header_code,
+        get_globals_css_code, get_header_code,
         get_footer_code, get_placeholder_code, get_dynamic_page_code,
         Deployer, fetch_images
     )
@@ -63,7 +63,7 @@ def create_website_task(
         # Import functions - NO importlib.reload() calls!
         (
             get_site_blueprint, get_component_code, get_layout_code,
-            get_globals_css_code, get_tailwind_config_code, get_header_code,
+            get_globals_css_code, get_header_code,
             get_footer_code, get_placeholder_code, get_dynamic_page_code,
             Deployer, fetch_images
         ) = _imports()
@@ -91,11 +91,72 @@ def create_website_task(
         # 6. Generate and Write ALL Site Files - PASS task_id to ALL functions
         logger.info("✍️ Generating all site files with AI...")
         
+        # Define static tailwind.config.ts content
+        tailwind_config_content = """
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  darkMode: "class",
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+      },
+      borderRadius: {
+        lg: `var(--radius)`,
+        md: `calc(var(--radius) - 2px)`,
+        sm: `calc(var(--radius) - 4px)`,
+      },
+    },
+  },
+  plugins: [require("tailwindcss-animate")],
+};
+
+export default config;
+"""
+
         # Define files to be written with task_id passed to all generation functions
         files_to_write = {
             "app/layout.tsx": get_layout_code(blueprint, task_id=self.request.id),
             "app/globals.css": get_globals_css_code(blueprint, task_id=self.request.id),
-            "tailwind.config.ts": get_tailwind_config_code(blueprint, task_id=self.request.id),
+            "tailwind.config.ts": tailwind_config_content.strip(),
             "components/Header.tsx": get_header_code(blueprint, task_id=self.request.id),
             "components/Footer.tsx": get_footer_code(blueprint, task_id=self.request.id),
             "components/Placeholder.tsx": get_placeholder_code(task_id=self.request.id)
