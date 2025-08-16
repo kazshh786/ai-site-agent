@@ -95,6 +95,7 @@ def create_website_task(
         files_to_write = {
             "app/layout.tsx": get_layout_code(blueprint, task_id=self.request.id),
             "app/globals.css": get_globals_css_code(blueprint, task_id=self.request.id),
+            "tailwind.config.ts": get_tailwind_config_code(blueprint, task_id=self.request.id),
             "components/Header.tsx": get_header_code(blueprint, task_id=self.request.id),
             "components/Footer.tsx": get_footer_code(blueprint, task_id=self.request.id),
             "components/Placeholder.tsx": get_placeholder_code(task_id=self.request.id)
