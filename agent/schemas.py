@@ -1,6 +1,6 @@
 # agent/schemas.py
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, model_validator
 
 class Component(BaseModel):
     component_name: str
@@ -10,15 +10,16 @@ class Component(BaseModel):
     class Config:
         extra = "allow" # Allow other fields from the AI
 
-    @root_validator(pre=True)
-    def map_component_fields(cls, values):
+    @model_validator(mode='before')
+    def map_component_fields(self) -> 'Component':
         # Map various possible AI key names to our consistent schema
-        component_name = values.get('componentName') or values.get('name')
-        if not component_name:
-            raise ValueError("Component name is required. Please provide a 'componentName' or 'name' for each component.")
-        values['component_name'] = component_name
-        values['component_type'] = values.get('componentType') or values.get('type') or 'generic'
-        return values
+        if isinstance(self, dict):
+            component_name = self.get('componentName') or self.get('name')
+            if not component_name:
+                raise ValueError("Component name is required. Please provide a 'componentName' or 'name' for each component.")
+            self['component_name'] = component_name
+            self['component_type'] = self.get('componentType') or self.get('type') or 'generic'
+        return self
 
 class Section(BaseModel):
     section_name: str
@@ -27,10 +28,11 @@ class Section(BaseModel):
     class Config:
         extra = "allow"
 
-    @root_validator(pre=True)
-    def map_section_fields(cls, values):
-        values['section_name'] = values.get('sectionName') or values.get('name') or f"Section_{values.get('id', 'unknown')}"
-        return values
+    @model_validator(mode='before')
+    def map_section_fields(self) -> 'Section':
+        if isinstance(self, dict):
+            self['section_name'] = self.get('sectionName') or self.get('name') or f"Section_{self.get('id', 'unknown')}"
+        return self
 
 class Page(BaseModel):
     id: str
@@ -41,14 +43,15 @@ class Page(BaseModel):
     class Config:
         extra = "allow"
 
-    @root_validator(pre=True)
-    def map_page_fields(cls, values):
-        values['page_name'] = values.get('pageName') or values.get('name') or f"Page_{values.get('id', 'unknown')}"
-        path = values.get('pagePath') or values.get('path') or values.get('urlSlug') or f"/{values['page_name'].lower().replace(' ', '-')}"
-        values['page_path'] = path if path.startswith('/') else f"/{path}"
-        # Generate an ID if it doesn't exist
-        values['id'] = values.get('id') or values.get('pageId') or values['page_name'].lower().replace(' ', '-')
-        return values
+    @model_validator(mode='before')
+    def map_page_fields(self) -> 'Page':
+        if isinstance(self, dict):
+            self['page_name'] = self.get('pageName') or self.get('name') or f"Page_{self.get('id', 'unknown')}"
+            path = self.get('pagePath') or self.get('path') or self.get('urlSlug') or f"/{self['page_name'].lower().replace(' ', '-')}"
+            self['page_path'] = path if path.startswith('/') else f"/{path}"
+            # Generate an ID if it doesn't exist
+            self['id'] = self.get('id') or self.get('pageId') or self['page_name'].lower().replace(' ', '-')
+        return self
 
 class SiteBlueprint(BaseModel):
     client_name: str
@@ -58,7 +61,8 @@ class SiteBlueprint(BaseModel):
     class Config:
         extra = "allow"
 
-    @root_validator(pre=True)
-    def map_site_fields(cls, values):
-        values['client_name'] = values.get('client_name') or values.get('name') or values.get('siteName') or values.get('company_name') or "Unknown"
-        return values
+    @model_validator(mode='before')
+    def map_site_fields(self) -> 'SiteBlueprint':
+        if isinstance(self, dict):
+            self['client_name'] = self.get('client_name') or self.get('name') or self.get('siteName') or self.get('company_name') or "Unknown"
+        return self
