@@ -194,6 +194,7 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
         user_prompt_text = (
             f"You are a world-class website architect. Your task is to analyze the following client brief and strictly generate a complete JSON site blueprint. "
             f"You MUST fill in the fields of the provided JSON template. Do NOT add any extra fields, alter the keys, or change the nested structure.\n\n"
+            f"**CRITICAL REQUIREMENT**: Every component object inside the 'components' array MUST have a 'componentName' key with a descriptive, non-empty string value.\n\n"
             f"--- CLIENT BRIEF ---\n"
             f"{brief}\n"
             f"--- END BRIEF ---\n\n"
@@ -356,6 +357,7 @@ Your immediate task is to create the code for a single, reusable React component
 - Use `<Link href="...">` for internal navigation.
 - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
 - Add `"use client";` at the top ONLY if you use hooks like `useState`.
+- **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
 - Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
 """
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
@@ -575,66 +577,43 @@ interface Page {{{{
   page_path: string; // Use 'page_path' for the URL slug
   sections: Section[];
 }}}}
-CRITICAL NEXT.JS 15 REQUIREMENTS:
+```
+**CRITICAL NEXT.JS 15 REQUIREMENTS:**
+1.  Use this EXACT function signature and props interface:
+    ```tsx
+    interface PageProps {{{{
+      params: {{ slug?: string[] }};
+    }}}}
 
-Use this EXACT function signature and props interface:
-
-TypeScript
-
-interface PageProps {{{{
-  params: {{ slug?: string[] }};
-}}}}
-
-export default function DynamicPage({{{{ params }}}}: PageProps) {{{{
-  const {{ slug }} = params;
-  // ... rest of component
-}}}}
-TypeScript Requirements:
-
-Use the type definitions provided above. When you find a page, section, or component, type it correctly (e.g., const page: Page | undefined = ..., const section: Section = ...).
-
-Never use the any type for variables, function parameters, or return types. Use unknown if a type is truly dynamic.
-
-Remove unused variables or prefix with underscore.
-
-Character Escaping (JSX TEXT ONLY):
-
-ONLY escape characters inside JSX text content (between tags).
-
-Use ' for apostrophes in JSX text: <p>Don't worry</p>
-
-Use " for quotes in JSX text: <p>He said "hello"</p>
-
-NEVER escape characters in imports, strings, or JavaScript code.
-
-Component Imports:
-
-Available components: {str(component_filenames)}
-
-Import using: import ComponentName from '@/components/ComponentName';
-
-If a component is NOT in the available list, you MUST use the Placeholder component. For example: import Placeholder from '@/components/Placeholder'; and render it like <Placeholder componentName="MissingComponentName" />.
-
-CRITICAL PLACEHOLDER RENDERING:
-
-When rendering Placeholder components, NEVER spread component.props that might contain a conflicting componentName property.
-
-Use this exact pattern: <Placeholder key={{{{componentIndex}}}} componentName={{{{component.component_name}}}} />
-
-Do NOT use: <Placeholder componentName={{{{component.component_name}}}} {{{{\.\.\.component.props}}}} />
-
-Syntactic Correctness: You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
-
-Logic:
-
-Find the correct page object from the blueprint based on the slug.
-
-If the slug is empty or undefined, default to the page where page_path is '/'.
-
-If no matching page is found, render a "404 Not Found" message.
-
-Map over the page's sections and components to render them. Use a switch statement on component.component_name to render the correct imported component.
-Site Blueprint (for context):
+    export default function DynamicPage({{{{ params }}}}: PageProps) {{{{
+      const {{ slug }} = params;
+      // ... rest of component
+    }}}}
+    ```
+2.  **TypeScript Requirements:**
+    - Use the type definitions provided above. When you find a page, section, or component, type it correctly (e.g., `const page: Page | undefined = ...`, `const section: Section = ...`).
+    - Never use the `any` type for variables, function parameters, or return types. Use `unknown` if a type is truly dynamic.
+    - Remove unused variables or prefix with underscore.
+3.  **Character Escaping (JSX TEXT ONLY):**
+    - ONLY escape characters inside JSX text content (between tags).
+    - Use `'` for apostrophes in JSX text: `<p>Don&apos;t worry</p>`
+    - Use `"` for quotes in JSX text: `<p>He said &quot;hello&quot;</p>`
+    - NEVER escape characters in imports, strings, or JavaScript code.
+4.  **Component Imports:**
+    - Available components: {str(component_filenames)}
+    - Import using: `import ComponentName from '@/components/ComponentName';`
+    - If a component is NOT in the available list, you MUST use the `Placeholder` component. For example: `import Placeholder from '@/components/Placeholder';` and render it like `<Placeholder componentName="MissingComponentName" />`.
+5.  **CRITICAL PLACEHOLDER RENDERING:**
+    - When rendering Placeholder components, NEVER spread `component.props` that might contain a conflicting `componentName` property.
+    - Use this exact pattern: `<Placeholder key={{{{componentIndex}}}} componentName={{{{component.component_name}}}} />`
+    - Do NOT use: `<Placeholder componentName={{{{component.component_name}}}} {{{{\.\.\.component.props}}}} />`
+6.  **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
+7.  **Logic:**
+    - Find the correct page object from the blueprint based on the slug.
+    - If the slug is empty or undefined, default to the page where `page_path` is `/`.
+    - If no matching page is found, render a "404 Not Found" message.
+    - Map over the page's sections and components to render them. Use a `switch` statement on `component.component_name` to render the correct imported component.
+**Site Blueprint (for context):**
 {blueprint.model_dump_json(by_alias=True, indent=2)}
 Output only the complete `.tsx` code in a ```tsx code block. Do not add any explanation.
 """
