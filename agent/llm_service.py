@@ -357,6 +357,7 @@ Your immediate task is to create the code for a single, reusable React component
 - Use `<Link href="...">` for internal navigation.
 - Use `<Image ... />` for images, always including `width`, `height`, and `alt`.
 - Add `"use client";` at the top ONLY if you use hooks like `useState`.
+- **Syntactic Correctness:** You MUST ensure the generated .tsx code is syntactically perfect. Pay close attention to details like closing tags, correct placement of semicolons, and proper object and interface definitions. The code must be ready for compilation without any syntax errors.
 - Your entire output must be only the raw `.tsx` code inside a ```tsx code block.
 """
     return _generate_code(prompt, f"{component_name}.tsx", task_id)
