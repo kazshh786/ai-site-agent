@@ -1,6 +1,6 @@
 # agent/schemas.py
 from pydantic import BaseModel, Field
-from pydantic.alias_generators import AliasChoices
+from pydantic.fields import AliasChoices
 from typing import List, Optional
 
 class Component(BaseModel):

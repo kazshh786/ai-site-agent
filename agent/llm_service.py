@@ -185,11 +185,10 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
 
         company_text = f"for the company: {company}" if company else "for the company mentioned in the brief"
 
-        # Get the JSON schema from Pydantic without the unsupported 'indent' parameter
-        schema_json = SiteBlueprint.model_json_schema(by_alias=True)
-
-        # Format the schema using Python's standard json library
-        formatted_schema = json.dumps(schema_json, indent=2)
+        # In Pydantic v2, model_json_schema() returns a dict, not a string.
+        # We format it ourselves using the json library.
+        schema_dict = SiteBlueprint.model_json_schema(by_alias=True)
+        formatted_schema = json.dumps(schema_dict, indent=2)
 
         user_prompt_text = (
             f"You are a world-class website architect. Your task is to analyze the following client brief and strictly generate a complete JSON site blueprint. "
