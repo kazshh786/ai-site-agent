@@ -194,6 +194,7 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
         user_prompt_text = (
             f"You are a world-class website architect. Your task is to analyze the following client brief and strictly generate a complete JSON site blueprint. "
             f"You MUST fill in the fields of the provided JSON template. Do NOT add any extra fields, alter the keys, or change the nested structure.\n\n"
+            f"**CRITICAL REQUIREMENT**: Every component object inside the 'components' array MUST have a 'componentName' key with a descriptive, non-empty string value.\n\n"
             f"--- CLIENT BRIEF ---\n"
             f"{brief}\n"
             f"--- END BRIEF ---\n\n"

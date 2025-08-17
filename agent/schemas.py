@@ -13,7 +13,10 @@ class Component(BaseModel):
     @root_validator(pre=True)
     def map_component_fields(cls, values):
         # Map various possible AI key names to our consistent schema
-        values['component_name'] = values.get('componentName') or values.get('name') or f"Component_{values.get('id', 'unknown')}"
+        component_name = values.get('componentName') or values.get('name')
+        if not component_name:
+            raise ValueError("Component name is required. Please provide a 'componentName' or 'name' for each component.")
+        values['component_name'] = component_name
         values['component_type'] = values.get('componentType') or values.get('type') or 'generic'
         return values
 
