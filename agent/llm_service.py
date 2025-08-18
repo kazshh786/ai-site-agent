@@ -198,6 +198,9 @@ Your immediate task is to create the code for a single, reusable React component
 {blueprint.model_dump_json(by_alias=True, indent=2)}
 
 **CRITICAL INSTRUCTIONS:**
+- **File & Import Structure:**
+  - When importing another component, YOU MUST use a flat path: `import ComponentName from '@/components/ComponentName';`
+  - **DO NOT** use nested paths like `components/layout/Header`. This is a fatal error.
 - Follow the TypeScript guidelines above EXACTLY
 - Use Tailwind CSS for all styling. Make it modern, professional, and visually appealing.
 - ONLY use these available lucide-react icons: Menu, X, ChevronDown, Mail, Phone, MapPin, Facebook, Twitter, Linkedin, Instagram, ArrowRight, Check, Star, Users, Truck, Bot, Cpu, Zap.
@@ -220,7 +223,7 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     **CRITICAL INSTRUCTIONS:**
     1. **TypeScript:** The root layout accepts a `children` prop. It MUST be typed as `React.ReactNode`.
     2. **Structure:** Import and render the `Header` and `Footer` components.
-    3. **Imports:** Use the `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`).
+    3. **Imports:** Use a flat `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`). DO NOT use nested paths.
     4. **Font:** The font should be '{font_family}'.
     5. **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
@@ -316,6 +319,7 @@ def get_dynamic_page_code(blueprint: SiteBlueprint, component_filenames: List[st
     - Render a "404 Not Found" message if no page matches.
     - Map over the page's sections and components to render them.
     - Use a `switch` statement on `component.component_name` to render the correct imported component.
+    - **CRITICAL IMPORT RULE:** All component imports MUST be flat. E.g., `import Header from '@/components/Header';`.
     - Available components: {str(component_filenames)}
     - If a component is not available, use the `Placeholder` component.
     """

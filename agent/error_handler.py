@@ -36,13 +36,23 @@ def parse_build_error(stderr: str) -> Optional[Dict[str, Any]]:
         re.MULTILINE
     )
 
-    for pattern in [pattern1, pattern2, pattern3]:
+    # Pattern for "Module not found" errors, where the file path is on the preceding line.
+    pattern4 = re.compile(
+        r"^(?P<file_path>\.\/.*\.tsx?)\n"
+        r"Module not found: Can't resolve '(?P<error_message>.*?)'",
+        re.MULTILINE
+    )
+
+    for pattern in [pattern1, pattern2, pattern3, pattern4]:
         match = pattern.search(stderr)
         if match:
             error_details = match.groupdict()
             # Set default line/column if not found by the regex
             error_details.setdefault('line', '1')
             error_details.setdefault('column', '1')
+            # Add a flag for this specific error type
+            if pattern == pattern4:
+                error_details['error_type'] = 'ModuleNotFound'
             log.info(f"Parsed build error with pattern: {error_details}")
             return error_details
 
@@ -76,13 +86,33 @@ Return ONLY the corrected code in a ```tsx code block. No explanations.
 
 def get_targeted_fix_prompt(file_content: str, error_details: Dict[str, Any]) -> str:
     """
-    Creates a highly specific prompt to fix a single error in a file, with a strong focus on syntax.
+    Creates a highly specific prompt to fix a single error in a file, based on the error type.
     """
-    # Get the base syntax critic prompt.
-    base_prompt = get_syntax_critic_prompt(file_content, error_details['file_path'])
+    if error_details.get('error_type') == 'ModuleNotFound':
+        return f"""You are an expert Next.js developer. Your task is to fix a broken import path in a React component.
 
-    # Add the specific error context to it.
-    error_context_prompt = f"""
+**ERROR ANALYSIS:**
+- **File with Error:** `{error_details['file_path']}`
+- **Missing Module:** The build failed because it could not find the module: `{error_details['error_message']}`
+
+**CRITICAL INSTRUCTIONS:**
+1.  **Analyze the Code:** Examine the `import` statements in the file content below.
+2.  **Identify the Error:** Find the `import` statement that is trying to load the missing module. The path is incorrect.
+3.  **Correct the Path:**
+    - Component imports MUST be flat, like `from '@/components/MyComponent'`.
+    - The `globals.css` file is located at `app/globals.css`, so it should be imported as `from '@/app/globals.css'`.
+4.  **Return Full Code:** Return ONLY the complete, corrected code for the file in a ```tsx code block. Do not add any explanations.
+
+---
+**FULL FILE CONTENT TO FIX:**
+```tsx
+{file_content}
+```
+"""
+
+    # Fallback to the original syntax critic for other errors
+    base_prompt = get_syntax_critic_prompt(file_content, error_details['file_path'])
+    return f"""
     An attempt to build the project failed with the following specific error.
     You must fix this error.
 
@@ -94,7 +124,6 @@ def get_targeted_fix_prompt(file_content: str, error_details: Dict[str, Any]) ->
 
     {base_prompt}
     """
-    return error_context_prompt
 
 def attempt_targeted_fix(project_path: Path, error_details: Dict[str, Any], task_id: str) -> bool:
     """
