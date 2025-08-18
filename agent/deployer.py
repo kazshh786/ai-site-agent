@@ -222,12 +222,12 @@ module.exports = nextConfig;
                 duplicate_lockfile.unlink()
 
             # First build attempt
-            DeployerLogger.log_info("BUILD_ATTEMPT: 1")
+            DeployerLogger.log_info("build.attempt", "Starting build attempt 1.")
             build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
             DeployerLogger.log_command_result(build_result, "next_build_attempt_1")
 
             if not build_result.success:
-                DeployerLogger.log_warning("BUILD_ATTEMPT: 1 FAILED. Starting targeted repair...")
+                DeployerLogger.log_warning("build.attempt.failed", "Build attempt 1 failed. Starting targeted repair...")
 
                 error_details = parse_build_error(build_result.stderr)
                 if error_details:
@@ -235,11 +235,11 @@ module.exports = nextConfig;
                     if fix_successful:
                         DeployerLogger.log_info("build.fix.success", "Targeted fix applied successfully. Retrying build.")
                         # Second and final build attempt
-                        DeployerLogger.log_info("BUILD_ATTEMPT: 2")
+                        DeployerLogger.log_info("build.attempt", "Starting build attempt 2.")
                         build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
                         DeployerLogger.log_command_result(build_result, "next_build_attempt_2")
                         if not build_result.success:
-                            DeployerLogger.log_error("BUILD_ATTEMPT: 2 FAILED.")
+                            DeployerLogger.log_error("build.attempt.failed", "Build attempt 2 failed.")
                             raise Exception("Failed to build Next.js project after targeted fix.")
                     else:
                         DeployerLogger.log_error("build.fix.failed", "Targeted fix attempt failed. Unable to correct build error.")

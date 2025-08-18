@@ -224,6 +224,7 @@ def get_layout_code(blueprint: SiteBlueprint, task_id: str) -> str:
     1. **TypeScript:** The root layout accepts a `children` prop. It MUST be typed as `React.ReactNode`.
     2. **Structure:** Import and render the `Header` and `Footer` components.
     3. **Imports:** Use a flat `@/` alias for all component imports (e.g., `import Header from '@/components/Header';`). DO NOT use nested paths.
+    3.5. **CSS Import:** Import the global stylesheet with the relative path `'./globals.css'`.
     4. **Font:** The font should be '{font_family}'.
     5. **Output:** Only output the raw TSX code in a single ```tsx code block.
     """

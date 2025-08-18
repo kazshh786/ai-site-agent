@@ -44,7 +44,7 @@ def _imports():
         Deployer, fetch_images
     )
 
-@app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
+@app.task(bind=True)
 def create_website_task(
     self, brief: str, company: str | None = None, domain: str | None = None, model: str = "gemini",
     force: bool = False, deploy: bool = True, email: str | None = None,
