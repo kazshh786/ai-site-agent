@@ -22,5 +22,8 @@ class Page(BaseModel):
 
 class SiteBlueprint(BaseModel):
     client_name: str
+    site_type: str = Field(..., description="Type of website, e.g., 'e-commerce', 'portfolio', 'blog'.")
+    target_audience: str = Field(..., description="The target audience for the website.")
+    key_features: List[str] = Field(..., description="List of key features for the website.")
     pages: List[Page]
     design_system: Optional[dict] = None
