@@ -221,30 +221,37 @@ module.exports = nextConfig;
                 DeployerLogger.log_warning("build.duplicate_lockfile", f"Removing duplicate lockfile at {duplicate_lockfile}")
                 duplicate_lockfile.unlink()
 
-            # Build the project - First Attempt
-            build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
-            DeployerLogger.log_command_result(build_result, "next_build_attempt_1")
+            build_successful = False
+            for i in range(3): # 3-strike build attempts
+                attempt_num = i + 1
+                DeployerLogger.log_info("build.attempt", f"Build attempt {attempt_num}...")
 
-            if not build_result.success:
-                DeployerLogger.log_warning("build.failed", "Initial build failed. Attempting targeted error correction.")
+                build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
+                DeployerLogger.log_command_result(build_result, f"next_build_attempt_{attempt_num}")
 
+                if build_result.success:
+                    build_successful = True
+                    DeployerLogger.log_info("build.success", f"Build attempt {attempt_num} successful.")
+                    break # Exit the loop on successful build
+
+                # If build failed, attempt to fix it
+                DeployerLogger.log_warning("build.failed", f"Build attempt {attempt_num} failed. Attempting targeted error correction.")
                 error_details = parse_build_error(build_result.stderr)
-                if error_details:
-                    fix_successful = attempt_targeted_fix(site_path, error_details, task_id)
-                    if fix_successful:
-                        DeployerLogger.log_info("build.fix.success", "Targeted fix applied successfully. Retrying build.")
-                        # Build the project - Second Attempt
-                        build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
-                        DeployerLogger.log_command_result(build_result, "next_build_attempt_2")
-                        if not build_result.success:
-                            DeployerLogger.log_error("build.failed_after_fix", "Build failed again after applying targeted fix.")
-                            raise Exception("Failed to build Next.js project after targeted fix.")
-                    else:
-                        DeployerLogger.log_error("build.fix.failed", "Targeted fix attempt failed. Unable to correct build error.")
-                        raise Exception("Failed to apply targeted fix to build error.")
-                else:
-                    DeployerLogger.log_error("build.parse.failed", "Could not parse build error. Unable to attempt targeted fix.")
+
+                if not error_details:
+                    DeployerLogger.log_error("build.parse.failed", "Could not parse build error. Halting.")
                     raise Exception("Failed to build Next.js project and could not parse error log.")
+
+                fix_successful = attempt_targeted_fix(site_path, error_details, task_id)
+                if not fix_successful:
+                    DeployerLogger.log_error("build.fix.failed", "Targeted fix attempt failed. Halting.")
+                    raise Exception("Failed to apply targeted fix to build error.")
+
+                DeployerLogger.log_info("build.fix.success", f"Targeted fix applied for attempt {attempt_num}. Retrying build...")
+
+            if not build_successful:
+                DeployerLogger.log_error("build.failed_after_retries", "Build failed after 3 attempts.")
+                raise Exception("Failed to build Next.js project after multiple targeted fix attempts.")
 
             DeployerLogger.log_resource_usage("after_build")
 
