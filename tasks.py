@@ -35,15 +35,12 @@ def _imports():
         get_globals_css_code, get_header_code,
         get_footer_code, get_placeholder_code, get_dynamic_page_code
     )
-    # Import the project validator from the new service
-    from agent.enhanced_llm_service import validate_complete_project
     from agent.deployer import Deployer
     from agent.image_service import get_images_from_pexels as fetch_images
     return (
         get_site_blueprint, get_component_code, get_layout_code,
         get_globals_css_code, get_header_code,
         get_footer_code, get_placeholder_code, get_dynamic_page_code,
-        validate_complete_project,
         Deployer, fetch_images
     )
 
@@ -68,7 +65,6 @@ def create_website_task(
             get_site_blueprint, get_component_code, get_layout_code,
             get_globals_css_code, get_header_code,
             get_footer_code, get_placeholder_code, get_dynamic_page_code,
-            validate_complete_project,
             Deployer, fetch_images
         ) = _imports()
 
@@ -95,7 +91,9 @@ def create_website_task(
         # 6. Generate and Write ALL Site Files - PASS task_id to ALL functions
         logger.info("✍️ Generating all site files with AI...")
         
-        all_generated_files = {}
+        # NOTE: The all_generated_files dictionary is no longer needed for pre-build validation
+        # but could be useful for the new targeted error correction loop.
+        # For now, we simplify and remove it.
 
         # Define static tailwind.config.ts content
         tailwind_config_content = """
@@ -167,7 +165,6 @@ export default config;
             "components/Footer.tsx": get_footer_code(blueprint, task_id=self.request.id),
             "components/Placeholder.tsx": get_placeholder_code(task_id=self.request.id)
         }
-        all_generated_files.update(files_to_write)
         
         # Write static files and check for errors
         for path, content in files_to_write.items():
@@ -185,8 +182,6 @@ export default config;
         
         for name in unique_components:
             code = get_component_code(name, blueprint, task_id=self.request.id)
-            component_path = f"components/{name}.tsx"
-            all_generated_files[component_path] = code
             result = file_writer.write_file(site_path / "components" / f"{name}.tsx", code)
             if not result.success:
                 raise Exception(f"Failed to write component {name}.tsx: {result.error}")
@@ -205,8 +200,6 @@ export default config;
         correct_params = "const slug = params.slug;"
         page_tsx_code = page_tsx_code.replace(faulty_params, correct_params)
 
-        dynamic_page_path = "app/[...slug]/page.tsx"
-        all_generated_files[dynamic_page_path] = page_tsx_code
         result = file_writer.write_file(site_path / "app" / "[...slug]" / "page.tsx", page_tsx_code)
         if not result.success:
             raise Exception(f"Failed to write dynamic page: {result.error}")
@@ -214,18 +207,12 @@ export default config;
         # Save the blueprint.json and log file writing summary
         blueprint_path = site_path / "blueprint.json"
         blueprint_content = blueprint.model_dump_json(by_alias=True, indent=2)
-        all_generated_files["blueprint.json"] = blueprint_content
         result = file_writer.write_file(blueprint_path, blueprint_content)
         if not result.success:
             raise Exception(f"Failed to write blueprint.json: {result.error}")
         file_writer.log_final_summary()
 
-        # 7. Project-Wide Integration Validation
-        logger.info("🔬 Validating complete project for integration issues...")
-        integration_result = validate_complete_project(all_generated_files, blueprint, self.request.id)
-        logger.info(f"📊 Integration validation result: {integration_result}")
-
-        # 8. Install, Build, and Deploy - PASS task_id
+        # 7. Install, Build, and Deploy - PASS task_id
         deployer.install_dependencies(site_path, task_id=self.request.id)
         if deploy:
             email = email or os.getenv("DEPLOY_EMAIL", "admin@example.com")

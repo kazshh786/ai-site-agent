@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from utils.commands import run
 from .deployer_logger import DeployerLogger
+from agent.error_handler import parse_build_error, attempt_targeted_fix
 from logger import start_span, finish_span
 from utils.metrics import metrics
 
@@ -220,11 +221,30 @@ module.exports = nextConfig;
                 DeployerLogger.log_warning("build.duplicate_lockfile", f"Removing duplicate lockfile at {duplicate_lockfile}")
                 duplicate_lockfile.unlink()
 
-            # Build the project
+            # Build the project - First Attempt
             build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
-            DeployerLogger.log_command_result(build_result, "next_build")
+            DeployerLogger.log_command_result(build_result, "next_build_attempt_1")
+
             if not build_result.success:
-                raise Exception("Failed to build Next.js project.")
+                DeployerLogger.log_warning("build.failed", "Initial build failed. Attempting targeted error correction.")
+
+                error_details = parse_build_error(build_result.stderr)
+                if error_details:
+                    fix_successful = attempt_targeted_fix(site_path, error_details, task_id)
+                    if fix_successful:
+                        DeployerLogger.log_info("build.fix.success", "Targeted fix applied successfully. Retrying build.")
+                        # Build the project - Second Attempt
+                        build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
+                        DeployerLogger.log_command_result(build_result, "next_build_attempt_2")
+                        if not build_result.success:
+                            DeployerLogger.log_error("build.failed_after_fix", "Build failed again after applying targeted fix.")
+                            raise Exception("Failed to build Next.js project after targeted fix.")
+                    else:
+                        DeployerLogger.log_error("build.fix.failed", "Targeted fix attempt failed. Unable to correct build error.")
+                        raise Exception("Failed to apply targeted fix to build error.")
+                else:
+                    DeployerLogger.log_error("build.parse.failed", "Could not parse build error. Unable to attempt targeted fix.")
+                    raise Exception("Failed to build Next.js project and could not parse error log.")
 
             DeployerLogger.log_resource_usage("after_build")
 
