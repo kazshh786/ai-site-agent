@@ -33,34 +33,51 @@ def parse_build_error(stderr: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def get_syntax_critic_prompt(code: str, file_name: str) -> str:
+    """
+    Creates a prompt for the syntax critic.
+    This is used for targeted error correction.
+    """
+    return f"""You are a Senior TypeScript Syntax Validator. Your ONLY job is to fix syntax errors, TypeScript issues, and basic code structure problems.
+**CRITICAL SYNTAX CHECKLIST:**
+1. Imports: Ensure all used components/functions are imported correctly
+2. TypeScript: Verify interfaces, prop types, and type annotations
+3. JSX: Check all opening/closing tags match
+4. Brackets/Braces: Verify all {{{{}}}} [] () are properly closed
+5. Semicolons/Commas: Add missing punctuation in objects/arrays
+6. Quotes/Apostrophes: Escape apostrophes as '&apos;' in JSX text
+7. Unused Variables: Prefix unused vars with underscore (_unusedVar)
+8. Client Directives: Add 'use client' if component uses hooks/events
+File: {file_name}
+Return ONLY the corrected code in a ```tsx code block. No explanations.
+---
+**FULL FILE CONTENT TO FIX:**
+```tsx
+{code}
+```
+"""
+
 def get_targeted_fix_prompt(file_content: str, error_details: Dict[str, Any]) -> str:
     """
-    Creates a highly specific prompt to fix a single error in a file.
+    Creates a highly specific prompt to fix a single error in a file, with a strong focus on syntax.
     """
-    return f"""
-    You are an expert TypeScript and React developer tasked with fixing a build error.
-    A file has failed to build due to a specific error. Your ONLY job is to fix this single error.
+    # Get the base syntax critic prompt.
+    base_prompt = get_syntax_critic_prompt(file_content, error_details['file_path'])
 
-    **CRITICAL INSTRUCTIONS:**
-    1.  You must correct ONLY the specific error identified.
-    2.  Do NOT make any other changes, refactorings, or improvements to the code.
-    3.  Preserve the original code structure and logic as much as possible.
-    4.  Your output must be the complete, corrected content of the file.
+    # Add the specific error context to it.
+    error_context_prompt = f"""
+    An attempt to build the project failed with the following specific error.
+    You must fix this error.
 
-    ---
-    **ERROR DETAILS:**
+    **ERROR TO FIX:**
     - **File:** {error_details['file_path']}
     - **Line:** {error_details['line']}
     - **Column:** {error_details['column']}
     - **Error Message:** {error_details['error_message']}
-    ---
-    **FULL FILE CONTENT TO FIX:**
-    ```tsx
-    {file_content}
-    ```
-    ---
-    Now, provide the complete and corrected file content in a single ```tsx code block.
+
+    {base_prompt}
     """
+    return error_context_prompt
 
 def attempt_targeted_fix(project_path: Path, error_details: Dict[str, Any], task_id: str) -> bool:
     """

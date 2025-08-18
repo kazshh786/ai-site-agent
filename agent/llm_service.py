@@ -95,11 +95,9 @@ def validate_component_imports(code: str, available_components: List[str], compo
 def _generate_code(prompt: str, component_name: str, task_id: str, available_components: Optional[List[str]] = None) -> str:
     """
     Wrapper around the enhanced_generate_code function to fit the existing workflow.
-    It calls the full Generator-Critic pipeline and then performs final programmatic validation.
+    It calls the generator and then performs final programmatic validation.
     """
-    final_code, quality_score = enhanced_generate_code(prompt, component_name, task_id, available_components)
-
-    log.info(f"Component {component_name} generated with quality score: {quality_score.overall_score}", extra={"task_id": task_id, "quality_score": quality_score})
+    final_code = enhanced_generate_code(prompt, component_name, task_id, available_components)
 
     # The programmatic validation for component imports is still a valuable final check.
     if available_components and "DynamicPage.tsx" in component_name:
