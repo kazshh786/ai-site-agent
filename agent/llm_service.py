@@ -286,8 +286,17 @@ def get_footer_code(blueprint: SiteBlueprint, task_id: str) -> str:
     prompt = f"""
     {MASTER_PERSONA_PROMPT}
     Generate a `Footer.tsx` component.
-    - Show copyright: "© {time.strftime('%Y')} {client}".
-    - Include navigation links for: {page_links}.
+
+    **CRITICAL INSTRUCTIONS:**
+    1. **Function Definition:** You MUST define the component as a named function declaration to avoid linting errors. Example: `export default function Footer(props: {{}}) {{ ... }}`. Do NOT use an anonymous arrow function assigned to a variable (e.g., `const Footer = () => ...`).
+    2. **TypeScript:**
+        - **NEVER use the `any` type.**
+        - **AVOID empty interfaces** - use `{{}}` directly for props if there are none.
+    3. **Content:**
+        - Show the copyright notice using the current year: "© {time.strftime('%Y')} {client}".
+        - Include navigation links for these pages: {page_links}. Use the `<Link>` component.
+    4. **Styling:** Use Tailwind CSS.
+    5. **Output:** Only output the raw TSX code in a single ```tsx code block.
     """
     return _generate_code(prompt, "Footer.tsx", task_id)
 
