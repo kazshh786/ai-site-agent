@@ -26,7 +26,7 @@ TUNED_ENDPOINT_PATH = f"projects/{TUNED_PROJECT_ID}/locations/{TUNED_LOCATION}/e
 
 GENERAL_PROJECT_ID = "automated-ray-463204-i2"
 GENERAL_LOCATION = "us-central1"
-GENERAL_MODEL_NAME = "gemini-1.5-pro"
+GENERAL_MODEL_NAME = "gemini-2.5-flash"
 
 # --- Client Initialization ---
 try:
