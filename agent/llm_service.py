@@ -100,15 +100,58 @@ def validate_component_imports(code: str, available_components: List[str], compo
 def lint_and_fix_code(code: str, component_name: str, task_id: str) -> str:
     with _span("lint_and_fix_code", component_name=component_name):
         fixes_applied = []
-        if 'import Link from' not in code and re.search(r'<a\s+href=["\'](/[^"\']*)["\']', code):
+
+        # Fix 1: Ensure Link import when Link is used
+        if 'import Link from' not in code and ('<Link' in code or 'Link>' in code):
             code = "import Link from 'next/link';\n" + code
             fixes_applied.append("Added Link import")
-        code = re.sub(r'<a\s+href=(["\']/[^"\']*["\'])([^>]*)>(.*?)</a>', r'<Link href=\1\2>\3</Link>', code, flags=re.DOTALL)
-        if 'Link' in code:
-            fixes_applied.append("Fixed internal <a> tags")
+
+        # Fix 2: Replace <a> tags with <Link> for internal routes
+        code = re.sub(r'<a\s+href=(["\']/[^"\']*["\'])([^>]*)>(.*?)</a>',
+                     r'<Link href=\1\2>\3</Link>', code, flags=re.DOTALL)
+
+        # Fix 3: Escape apostrophes in JSX text content
+        # This regex targets text between JSX tags, not in attributes or JS code
+        def fix_apostrophes(match):
+            content = match.group(1)
+            # Only replace single quotes that are likely apostrophes in text
+            content = re.sub(r"(?<!\\)'(?!['\"])", "&apos;", content)
+            return f">{content}<"
+
+        code = re.sub(r'>([^<>]*\'[^<>]*)<', fix_apostrophes, code)
+
+        # Fix 4: Remove unused variable declarations
+        # Look for const declarations that are never used
+        lines = code.split('\n')
+        used_vars = set()
+        declared_vars = {}
+
+        for i, line in enumerate(lines):
+            # Find variable declarations
+            const_match = re.match(r'\s*const\s+(\w+)\s*=', line)
+            if const_match:
+                var_name = const_match.group(1)
+                declared_vars[var_name] = i
+
+            # Find variable usage (simple heuristic)
+            for var in declared_vars:
+                if var in line and not line.strip().startswith('const'):
+                    used_vars.add(var)
+
+        # Prefix unused variables with underscore
+        for var_name, line_idx in declared_vars.items():
+            if var_name not in used_vars and not var_name.startswith('_'):
+                lines[line_idx] = lines[line_idx].replace(f'const {var_name}', f'const _{var_name}')
+                fixes_applied.append(f"Prefixed unused variable: {var_name}")
+
+        code = '\n'.join(lines)
+
+        # Fix 5: Add Image import when img tags are present
         if 'import Image from' not in code and '<img' in code:
             code = "import Image from 'next/image';\n" + code
             fixes_applied.append("Added Image import")
+
+        # Fix 6: Convert img to Image components
         def replace_img_with_image(match):
             attrs_str = match.group(1)
             attrs = dict(re.findall(r'(\w+)=["\']([^"\']*)["\']', attrs_str))
@@ -118,19 +161,32 @@ def lint_and_fix_code(code: str, component_name: str, task_id: str) -> str:
             final_attrs = []
             for k, v in attrs.items():
                 if v.isdigit():
-                    final_attrs.append(f'{k}={{int({v})}}')
+                    final_attrs.append(f'{k}={{{v}}}')
                 else:
                     final_attrs.append(f'{k}="{v}"')
             return f'<Image {" ".join(final_attrs)} />'
+
         code = re.sub(r'<img([^>]+)/?>', replace_img_with_image, code)
-        if 'Image' in code:
-            fixes_applied.append("Fixed <img> tags")
+
+        # Fix 7: Add 'use client' for hooks
         if re.search(r'use(State|Effect|Ref|Callback|Memo|Context)', code) and not code.strip().startswith('"use client"'):
             code = '"use client";\n' + code
             fixes_applied.append("Added 'use client' directive")
+
+        # Fix 8: Basic syntax validation and fixes
+        # Check for common syntax errors
+        if code.count('(') != code.count(')'):
+            log.warning(f"Parentheses mismatch detected in {component_name}",
+                       extra={"component": component_name, "task_id": task_id})
+
+        if code.count('{') != code.count('}'):
+            log.warning(f"Braces mismatch detected in {component_name}",
+                       extra={"component": component_name, "task_id": task_id})
+
         if fixes_applied:
             log.info(f"🔧 Applied code fixes to {component_name}: {', '.join(fixes_applied)}",
                      extra={"component": component_name, "fixes": fixes_applied, "task_id": task_id})
+
         return code
 
 # --- THIS IS THE MODIFIED FUNCTION ---
@@ -231,108 +287,43 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
 
 def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
     REACT_TYPESCRIPT_GUIDELINES = """
-## Critical TypeScript/React Guidelines - MUST FOLLOW EXACTLY:
+## CRITICAL TypeScript/React Syntax Rules:
 
-1. **Import Statements**:
-    ```typescript
-    // For React 18+ with Next.js, NO NEED to import React explicitly
-    // ONLY import React if using React.FC or React.ComponentType
-    import {{ useState, useEffect }} from 'react'; // Import hooks directly
-    ```
+1. **Function Signatures - Must be Perfect**:
+   ```tsx
+   // CORRECT patterns:
+   const Component = ({ prop1, prop2 = 'default' }: Props) => {
+   const Component: React.FC<Props> = ({ prop1 }) => {
+   export default function Component({ prop1 }: Props) {
 
-2. **Component Definition - Use ONE of these patterns**:
+   // WRONG - will cause build errors:
+   const Component = ({ prop1, prop2 = 'default' }: Props) => {  // Missing closing }
+   const Component = (prop1, prop2): Props => {  // Missing destructuring braces
 
-    **Option A - Implicit Typing (PREFERRED):**
-    ```typescript
-    interface ComponentProps {{
-      title?: string;
-      className?: string;
-    }}
+Import Statements - Must be Complete:
+tsximport Link from 'next/link';        // When using <Link>
+import Image from 'next/image';      // When using <Image>
+import { useState } from 'react';    // When using hooks
 
-    const ComponentName = ({{ title, className = '' }}: ComponentProps) => {{
-      return <div className={{className}}>{{title}}</div>;
-    }};
-    ```
+JSX Text Escaping:
+tsx// WRONG:
+<p>Don't worry about it</p>
 
-    **Option B - Explicit React.FC (if needed):**
-    ```typescript
-    import React from 'react';
+// CORRECT:
+<p>Don&apos;t worry about it</p>
+<p>{"Don't worry about it"}</p>
 
-    interface ComponentProps {{
-      title?: string;
-    }}
+Unused Variables:
+tsx// If declared but not used, prefix with underscore:
+const _unusedVariable = someValue;
 
-    const ComponentName: React.FC<ComponentProps> = ({{ title }}) => {{
-      return <div>{{title}}</div>;
-    }};
-    ```
+Syntax Validation Checklist:
 
-3. **NEVER use JSX.Element as return type**:
-    ❌ Bad: `const MyComponent = (): JSX.Element => {{`
-    ✅ Good: `const MyComponent = () => {{` (implicit)
-    ✅ Good: `const MyComponent: React.FC = () => {{` (explicit)
-
-4. **Interface Definitions - Always meaningful**:
-    ❌ Bad: `interface HeaderProps {{}}`
-    ✅ Good: `interface HeaderProps {{ title?: string; showNav?: boolean; }}`
-
-5. **Props Usage - Avoid unused variables**:
-    ❌ Bad: `const Footer = (props: FooterProps) => {{ // props never used`
-    ✅ Good: `const Footer = ({{ links, copyright }}: FooterProps) => {{`
-    ✅ Good: `const Footer = (_props: FooterProps) => {{` // If truly unused, prefix with _
-
-6. **String Escaping in JSX**:
-    ❌ Bad: `<p>"Don't worry"</p>`
-    ✅ Good: `<p>&quot;Don&apos;t worry&quot;</p>`
-    ✅ Good: `<p>{{'Don\\'t worry'}}</p>` (JS string)
-
-7. **Hooks Usage**:
-    ```typescript
-    'use client'; // Add this directive at the top if using hooks
-
-    import {{ useState, useEffect }} from 'react';
-
-    const Component = () => {{
-      const [isOpen, setIsOpen] = useState<boolean>(false);
-      // ... rest of component
-    }};
-    ```
-
-8. **Component Structure Template**:
-    ```typescript
-    // No React import needed for React 18+
-    import {{ useState }} from 'react'; // Only if using hooks
-    import Link from 'next/link';
-
-    interface ComponentProps {{
-      title?: string;
-      className?: string;
-    }}
-
-    const ComponentName = ({{ title = 'Default Title', className = '' }}: ComponentProps) => {{
-      // Component logic here
-
-      return (
-        <div className={{className}}>
-          {{title && <h2>{{title}}</h2>}}
-          <Link href="/about">About</Link>
-        </div>
-      );
-    }};
-
-    export default ComponentName;
-    ```
-
-9. **TypeScript Best Practices**:
-    - Never use `any` type - use `unknown` or specific types
-    - Use optional chaining: `data?.property`
-    - Provide default values in destructuring: `{{ title = 'Default' }}`
-    - Type all function parameters and return values when not obvious
-
-10. **Next.js Specific**:
-    - Use `Link` from 'next/link' for internal navigation
-    - Use `Image` from 'next/image' for images with width/height
-    - Add 'use client' directive only when using browser-specific features
+Every opening parenthesis ( has a closing )
+Every opening brace { has a closing }
+Every JSX tag is properly closed
+All imports are present for used components
+All string quotes in JSX text are escaped
 """
     prompt = f"""
     {MASTER_PERSONA_PROMPT}
