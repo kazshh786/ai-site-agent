@@ -68,7 +68,8 @@ def create_website_task(
             Deployer, fetch_images
         ) = _imports()
 
-        # 2. Get Blueprint & Images - PASS task_id to ALL functions
+        # PHASE 1/5: Generating Site Blueprint
+        logger.info("PHASE 1/5: Generating Site Blueprint...")
         blueprint = get_site_blueprint(company, brief, task_id=self.request.id)
         if blueprint is None:
             raise ValueError("Blueprint generation failed or returned an invalid structure.")
@@ -88,8 +89,8 @@ def create_website_task(
         # 5. Initialize FileWriter - PASS task_id
         file_writer = FileWriter(base_dir=site_path, task_id=self.request.id)
         
-        # 6. Generate and Write ALL Site Files - PASS task_id to ALL functions
-        logger.info("✍️ Generating all site files with AI...")
+        # PHASE 2/5: Generating Website Code
+        logger.info("PHASE 2/5: Generating Website Code...")
         
         # NOTE: The all_generated_files dictionary is no longer needed for pre-build validation
         # but could be useful for the new targeted error correction loop.
@@ -212,8 +213,11 @@ export default config;
             raise Exception(f"Failed to write blueprint.json: {result.error}")
         file_writer.log_final_summary()
 
-        # 7. Install, Build, and Deploy - PASS task_id
+        # PHASE 3/5: Installing Dependencies
+        logger.info("PHASE 3/5: Installing Dependencies...")
         deployer.install_dependencies(site_path, task_id=self.request.id)
+
+        # PHASE 4/5 & 5/5 are handled within build_and_deploy
         if deploy:
             email = email or os.getenv("DEPLOY_EMAIL", "admin@example.com")
             deployer.build_and_deploy(site_path, domain, email, task_id=self.request.id)

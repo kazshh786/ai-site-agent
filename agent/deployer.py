@@ -212,7 +212,7 @@ module.exports = nextConfig;
         """Builds the Next.js project and deploys it to the remote server."""
         with self._span("build_and_deploy", site_path=str(site_path), domain=domain, email=email):
             start_time = time.time()
-            DeployerLogger.log_step_start("Build and Deploy", 4, 5)
+            DeployerLogger.log_info("PHASE 4/5: Building Project...")
             DeployerLogger.log_resource_usage("before_build")
 
             # Clean up any duplicate lockfiles
@@ -222,11 +222,12 @@ module.exports = nextConfig;
                 duplicate_lockfile.unlink()
 
             # First build attempt
+            DeployerLogger.log_info("BUILD_ATTEMPT: 1")
             build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
             DeployerLogger.log_command_result(build_result, "next_build_attempt_1")
 
             if not build_result.success:
-                DeployerLogger.log_warning("build.failed", "Initial build failed. Attempting one targeted error correction.")
+                DeployerLogger.log_warning("BUILD_ATTEMPT: 1 FAILED. Starting targeted repair...")
 
                 error_details = parse_build_error(build_result.stderr)
                 if error_details:
@@ -234,10 +235,11 @@ module.exports = nextConfig;
                     if fix_successful:
                         DeployerLogger.log_info("build.fix.success", "Targeted fix applied successfully. Retrying build.")
                         # Second and final build attempt
+                        DeployerLogger.log_info("BUILD_ATTEMPT: 2")
                         build_result = run(["pnpm", "run", "build"], cwd=str(site_path), task_id=task_id)
                         DeployerLogger.log_command_result(build_result, "next_build_attempt_2")
                         if not build_result.success:
-                            DeployerLogger.log_error("build.failed_after_fix", "Build failed again after applying targeted fix.")
+                            DeployerLogger.log_error("BUILD_ATTEMPT: 2 FAILED.")
                             raise Exception("Failed to build Next.js project after targeted fix.")
                     else:
                         DeployerLogger.log_error("build.fix.failed", "Targeted fix attempt failed. Unable to correct build error.")
@@ -249,6 +251,7 @@ module.exports = nextConfig;
             DeployerLogger.log_resource_usage("after_build")
 
             # Deployment steps
+            DeployerLogger.log_info("PHASE 5/5: Verifying Deployment...")
             remote_dir = f"/srv/apps/{domain}"
             ssh_result = run(["ssh", "-i", DEPLOYER_KEY_PATH, f"{DEPLOYER_USER}@{DEPLOYER_HOST}", "mkdir", "-p", remote_dir], task_id=task_id)
             DeployerLogger.log_command_result(ssh_result, "deploy_create_remote_dir")
