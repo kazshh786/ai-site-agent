@@ -148,6 +148,10 @@ Return ONLY the performance-optimized code in a ```tsx code block.
 
 def get_integration_critic_prompt(all_files: Dict[str, str], site_blueprint: SiteBlueprint) -> str:
     """Cross-file consistency and integration critic"""
+
+    file_summaries = {k: f"// {k}\n{v[:200]}..." for k, v in all_files.items()}
+    project_files_str = json.dumps(file_summaries, indent=2)
+
     return f"""You are a Senior Full-Stack Integration Specialist. Review this complete Next.js project for integration issues.
 
 **PROJECT CONTEXT:**
@@ -165,7 +169,7 @@ def get_integration_critic_prompt(all_files: Dict[str, str], site_blueprint: Sit
 7. **Consistency**: Consistent naming and structure across files
 
 **PROJECT FILES:**
-{json.dumps({k: f"// {k}\\n{v[:200]}..." for k, v in all_files.items()}, indent=2)}
+{project_files_str}
 
 Respond with a JSON object:
 {{
