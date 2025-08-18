@@ -10,26 +10,43 @@ log = logging.getLogger(__name__)
 def parse_build_error(stderr: str) -> Optional[Dict[str, Any]]:
     """
     Parses the stderr from a failed pnpm run build command to find the first critical error.
+    Tries multiple regex patterns to handle different error formats.
     """
-    # Regex to capture file path, line, column, and the error message.
-    # It looks for a line starting with a path, followed by a line with line/col numbers and the error.
-    # Example:
-    # ⚠  ./components/Footer.tsx
-    # ⚠  48:23  Error: Component definition is missing display name  react/display-name
-    error_pattern = re.compile(
-        r"\u26a0\ufe0f\s+(?P<file_path>\.\/.*\.tsx?)\n"  # Match the file path line
-        r"\u26a0\ufe0f\s+(?P<line>\d+):(?P<column>\d+)\s+Error:\s(?P<error_message>.*)",  # Match the error line
+    # Pattern 1: For errors with file path and line/column number on separate lines.
+    pattern1 = re.compile(
+        r">\s+(?P<file_path>\.\/.*\.tsx?)\n"
+        r".*?"
+        r"(?P<line>\d+):(?P<column>\d+)\s+-\s+Error:\s(?P<error_message>.*)",
+        re.MULTILINE | re.DOTALL
+    )
+
+    # A more general pattern for other ESLint errors
+    pattern2 = re.compile(
+        r"Error:.*in\s+(?P<file_path>\S+\.tsx?)\n"
+        r"(?P<error_message>.*)",
         re.MULTILINE
     )
 
-    match = error_pattern.search(stderr)
+    # Next.js build error format
+    pattern3 = re.compile(
+        r"Error:.*next-lint\n"
+        r".*\n"
+        r"(?P<file_path>.\/.*.tsx?)\n"
+        r"(?P<line>\d+):(?P<column>\d+)\s+Error:\s(?P<error_message>.*)",
+        re.MULTILINE
+    )
 
-    if match:
-        error_details = match.groupdict()
-        log.info(f"Parsed build error: {error_details}")
-        return error_details
+    for pattern in [pattern1, pattern2, pattern3]:
+        match = pattern.search(stderr)
+        if match:
+            error_details = match.groupdict()
+            # Set default line/column if not found by the regex
+            error_details.setdefault('line', '1')
+            error_details.setdefault('column', '1')
+            log.info(f"Parsed build error with pattern: {error_details}")
+            return error_details
 
-    log.warning("Could not parse build error from stderr.")
+    log.warning("Could not parse build error from stderr with any known pattern.")
     return None
 
 
