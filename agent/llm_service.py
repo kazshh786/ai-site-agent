@@ -98,90 +98,71 @@ def validate_component_imports(code: str, available_components: List[str], compo
         return code
 
 def lint_and_fix_code(code: str, component_name: str, task_id: str) -> str:
+    """
+    Simple, reliable code fixes that don't break syntax
+    """
     with _span("lint_and_fix_code", component_name=component_name):
         fixes_applied = []
 
-        # Fix 1: Ensure Link import when Link is used
-        if 'import Link from' not in code and ('<Link' in code or 'Link>' in code):
-            code = "import Link from 'next/link';\n" + code
+        # Fix 1: Add missing Link import (only if Link is used but not imported)
+        if '<Link ' in code and 'import Link from' not in code:
+            # Add import at the beginning, after any 'use client' directive
+            if code.strip().startswith('"use client"'):
+                lines = code.split('\n')
+                lines.insert(1, "import Link from 'next/link';")
+                code = '\n'.join(lines)
+            else:
+                code = "import Link from 'next/link';\n" + code
             fixes_applied.append("Added Link import")
 
-        # Fix 2: Replace <a> tags with <Link> for internal routes
-        code = re.sub(r'<a\s+href=(["\']/[^"\']*["\'])([^>]*)>(.*?)</a>',
-                     r'<Link href=\1\2>\3</Link>', code, flags=re.DOTALL)
-
-        # Fix 3: Escape apostrophes in JSX text content
-        # This regex targets text between JSX tags, not in attributes or JS code
-        def fix_apostrophes(match):
-            content = match.group(1)
-            # Only replace single quotes that are likely apostrophes in text
-            content = re.sub(r"(?<!\\)'(?!['\"])", "&apos;", content)
-            return f">{content}<"
-
-        code = re.sub(r'>([^<>]*\'[^<>]*)<', fix_apostrophes, code)
-
-        # Fix 4: Remove unused variable declarations
-        # Look for const declarations that are never used
-        lines = code.split('\n')
-        used_vars = set()
-        declared_vars = {}
-
-        for i, line in enumerate(lines):
-            # Find variable declarations
-            const_match = re.match(r'\s*const\s+(\w+)\s*=', line)
-            if const_match:
-                var_name = const_match.group(1)
-                declared_vars[var_name] = i
-
-            # Find variable usage (simple heuristic)
-            for var in declared_vars:
-                if var in line and not line.strip().startswith('const'):
-                    used_vars.add(var)
-
-        # Prefix unused variables with underscore
-        for var_name, line_idx in declared_vars.items():
-            if var_name not in used_vars and not var_name.startswith('_'):
-                lines[line_idx] = lines[line_idx].replace(f'const {var_name}', f'const _{var_name}')
-                fixes_applied.append(f"Prefixed unused variable: {var_name}")
-
-        code = '\n'.join(lines)
-
-        # Fix 5: Add Image import when img tags are present
-        if 'import Image from' not in code and '<img' in code:
-            code = "import Image from 'next/image';\n" + code
+        # Fix 2: Add missing Image import (only if img is used but Image not imported)
+        if '<img ' in code and 'import Image from' not in code:
+            if code.strip().startswith('"use client"'):
+                lines = code.split('\n')
+                lines.insert(1, "import Image from 'next/image';")
+                code = '\n'.join(lines)
+            else:
+                code = "import Image from 'next/image';\n" + code
             fixes_applied.append("Added Image import")
 
-        # Fix 6: Convert img to Image components
-        def replace_img_with_image(match):
-            attrs_str = match.group(1)
-            attrs = dict(re.findall(r'(\w+)=["\']([^"\']*)["\']', attrs_str))
-            if 'width' not in attrs: attrs['width'] = '500'
-            if 'height' not in attrs: attrs['height'] = '300'
-            if 'alt' not in attrs: attrs['alt'] = 'image'
-            final_attrs = []
-            for k, v in attrs.items():
-                if v.isdigit():
-                    final_attrs.append(f'{k}={{{v}}}')
-                else:
-                    final_attrs.append(f'{k}="{v}"')
-            return f'<Image {" ".join(final_attrs)} />'
-
-        code = re.sub(r'<img([^>]+)/?>', replace_img_with_image, code)
-
-        # Fix 7: Add 'use client' for hooks
-        if re.search(r'use(State|Effect|Ref|Callback|Memo|Context)', code) and not code.strip().startswith('"use client"'):
+        # Fix 3: Add 'use client' for hooks (only if hooks are used)
+        hook_pattern = r'use(State|Effect|Ref|Callback|Memo|Context|Reducer)'
+        if re.search(hook_pattern, code) and not code.strip().startswith('"use client"'):
             code = '"use client";\n' + code
             fixes_applied.append("Added 'use client' directive")
 
-        # Fix 8: Basic syntax validation and fixes
-        # Check for common syntax errors
-        if code.count('(') != code.count(')'):
-            log.warning(f"Parentheses mismatch detected in {component_name}",
-                       extra={"component": component_name, "task_id": task_id})
+        # Fix 4: Remove unused imports (simple cases only)
+        lines = code.split('\n')
+        cleaned_lines = []
 
-        if code.count('{') != code.count('}'):
-            log.warning(f"Braces mismatch detected in {component_name}",
-                       extra={"component": component_name, "task_id": task_id})
+        for line in lines:
+            # Check for unused Link import
+            if line.strip().startswith('import Link from') and '<Link' not in code:
+                fixes_applied.append("Removed unused Link import")
+                continue
+            # Check for unused single imports from lucide-react
+            if 'import {' in line and 'lucide-react' in line:
+                # Extract imported items
+                import_match = re.search(r'import\s*{\s*([^}]+)\s*}\s*from\s*[\'"]lucide-react[\'"]', line)
+                if import_match:
+                    imports = [item.strip() for item in import_match.group(1).split(',')]
+                    used_imports = [imp for imp in imports if f'<{imp}' in code or f'{imp}' in code.replace(line, '')]
+                    if not used_imports:
+                        fixes_applied.append(f"Removed unused lucide-react import")
+                        continue
+                    elif len(used_imports) < len(imports):
+                        # Reconstruct with only used imports
+                        line = f"import {{ {', '.join(used_imports)} }} from 'lucide-react';"
+                        fixes_applied.append(f"Cleaned up lucide-react imports")
+
+            cleaned_lines.append(line)
+
+        code = '\n'.join(cleaned_lines)
+
+        # Fix 5: Replace empty interfaces with {}
+        code = re.sub(r'interface\s+\w+Props\s*{\s*}', '{}', code)
+        if 'interface' in code and '{}' in code:
+            fixes_applied.append("Replaced empty interfaces")
 
         if fixes_applied:
             log.info(f"🔧 Applied code fixes to {component_name}: {', '.join(fixes_applied)}",
@@ -287,43 +268,67 @@ def get_site_blueprint(company: str | None, brief: str, task_id: str) -> Optiona
 
 def get_component_code(component_name: str, blueprint: SiteBlueprint, task_id: str) -> str:
     REACT_TYPESCRIPT_GUIDELINES = """
-## CRITICAL TypeScript/React Syntax Rules:
+## CRITICAL TypeScript/React Syntax Rules - ZERO TOLERANCE FOR ERRORS:
 
-1. **Function Signatures - Must be Perfect**:
+1. **NEVER create syntax errors**:
+   - Every opening bracket `{` MUST have a closing `}`
+   - Every opening parenthesis `(` MUST have a closing `)`
+   - Every string quote MUST be properly closed
+   - Every JSX tag MUST be properly closed
+
+2. **String Literals in JSX**:
    ```tsx
-   // CORRECT patterns:
-   const Component = ({ prop1, prop2 = 'default' }: Props) => {
-   const Component: React.FC<Props> = ({ prop1 }) => {
-   export default function Component({ prop1 }: Props) {
+   // CORRECT - Use proper quotes:
+   className="bg-blue-500"
+   alt="Company logo"
 
-   // WRONG - will cause build errors:
-   const Component = ({ prop1, prop2 = 'default' }: Props) => {  // Missing closing }
-   const Component = (prop1, prop2): Props => {  // Missing destructuring braces
+   // CORRECT - Escape in JSX text:
+   <p>Don&apos;t worry</p>
 
-Import Statements - Must be Complete:
-tsximport Link from 'next/link';        // When using <Link>
-import Image from 'next/image';      // When using <Image>
-import { useState } from 'react';    // When using hooks
+   // WRONG - Will break build:
+   className="bg-blue-500
+   <p>Don't worry</p>
 
-JSX Text Escaping:
-tsx// WRONG:
-<p>Don't worry about it</p>
+Template Literals:
+tsx// CORRECT:
+className={`bg-${color}-500`}
 
-// CORRECT:
-<p>Don&apos;t worry about it</p>
-<p>{"Don't worry about it"}</p>
+// WRONG - missing backtick:
+className={`bg-${color}-500}
 
-Unused Variables:
-tsx// If declared but not used, prefix with underscore:
-const _unusedVariable = someValue;
+Interface Definitions:
+tsx// CORRECT - Add at least one property:
+interface ComponentProps {
+  className?: string;
+}
 
-Syntax Validation Checklist:
+// CORRECT - Use {} directly if no props:
+const Component = ({}: {}) => {
 
-Every opening parenthesis ( has a closing )
-Every opening brace { has a closing }
-Every JSX tag is properly closed
-All imports are present for used components
-All string quotes in JSX text are escaped
+// WRONG - Empty interface:
+interface ComponentProps {}
+
+Import Statements:
+tsx// ONLY import what you actually use:
+import Link from 'next/link';           // Only if <Link> is used
+import { useState } from 'react';       // Only if useState is used
+import { Menu, X } from 'lucide-react'; // Only import icons you use
+
+Function Components:
+tsx// PREFERRED - Simple and safe:
+const Component = ({ title = 'Default' }: { title?: string }) => {
+  return <div>{title}</div>;
+};
+
+export default Component;
+
+VALIDATION CHECKLIST - Before generating code:
+✅ All brackets and parentheses are balanced
+✅ All strings are properly quoted
+✅ All JSX tags are properly closed
+✅ No empty interfaces
+✅ Only used imports are included
+✅ Props are properly typed with at least one property
 """
     prompt = f"""
     {MASTER_PERSONA_PROMPT}
