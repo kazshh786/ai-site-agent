@@ -1,8 +1,9 @@
-# tasks.py - FINAL CORRECTED VERSION
+# tasks.py - REFACTORED
 
 import os
 import logging
 from pathlib import Path
+import uuid
 
 from celery import Celery
 from celery.signals import after_setup_logger
@@ -44,14 +45,17 @@ def _imports():
         Deployer, fetch_images
     )
 
-@app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
-def create_website_task(
-    self, brief: str, company: str | None = None, domain: str | None = None, model: str = "gemini",
-    force: bool = False, deploy: bool = True, email: str | None = None,
+def create_website_task_func(
+    brief: str, company: str | None = None, domain: str | None = None, model: str = "gemini",
+    force: bool = False, deploy: bool = True, email: str | None = None, task_id: str | None = None,
 ):
+    """This is the core logic for creating a website."""
+    if task_id is None:
+        task_id = str(uuid.uuid4())
+
     # 1. Set the trace context for the entire task
     trace_context = start_trace("create_website_task",
-                               task_id=self.request.id,
+                               task_id=task_id,
                                company=company,
                                domain=domain,
                                brief=brief)
@@ -70,33 +74,28 @@ def create_website_task(
 
         # PHASE 1/5: Generating Site Blueprint
         logger.info("PHASE 1/5: Generating Site Blueprint...")
-        blueprint = get_site_blueprint(company, brief, task_id=self.request.id)
+        blueprint = get_site_blueprint(company, brief, task_id=task_id)
         if blueprint is None:
             raise ValueError("Blueprint generation failed or returned an invalid structure.")
 
         try:
-            imgs = fetch_images(brief, task_id=self.request.id)
+            imgs = fetch_images(brief, task_id=task_id)
         except Exception as e:
             logger.warning("Image fetch failed, continuing without images.", extra={"error": str(e)})
 
         # 3. Setup Project Directory - PASS task_id
         deployer = Deployer()
-        site_path = deployer.create_project_directory(domain, force, task_id=self.request.id)
+        site_path = deployer.create_project_directory(domain, force, task_id=task_id)
         
         # 4. Scaffold and Configure Project - PASS task_id
-        deployer.scaffold_project(site_path, task_id=self.request.id)
+        deployer.scaffold_project(site_path, task_id=task_id)
         
         # 5. Initialize FileWriter - PASS task_id
-        file_writer = FileWriter(base_dir=site_path, task_id=self.request.id)
+        file_writer = FileWriter(base_dir=site_path, task_id=task_id)
         
         # PHASE 2/5: Generating Website Code
         logger.info("PHASE 2/5: Generating Website Code...")
         
-        # NOTE: The all_generated_files dictionary is no longer needed for pre-build validation
-        # but could be useful for the new targeted error correction loop.
-        # For now, we simplify and remove it.
-
-        # Define static tailwind.config.ts content
         tailwind_config_content = """
 import type { Config } from "tailwindcss";
 
@@ -157,23 +156,20 @@ const config: Config = {
 export default config;
 """
 
-        # Define files to be written with task_id passed to all generation functions
         files_to_write = {
-            "app/layout.tsx": get_layout_code(blueprint, task_id=self.request.id),
-            "app/globals.css": get_globals_css_code(blueprint, task_id=self.request.id),
+            "app/layout.tsx": get_layout_code(blueprint, task_id=task_id),
+            "app/globals.css": get_globals_css_code(blueprint, task_id=task_id),
             "tailwind.config.ts": tailwind_config_content.strip(),
-            "components/Header.tsx": get_header_code(blueprint, task_id=self.request.id),
-            "components/Footer.tsx": get_footer_code(blueprint, task_id=self.request.id),
-            "components/Placeholder.tsx": get_placeholder_code(task_id=self.request.id)
+            "components/Header.tsx": get_header_code(blueprint, task_id=task_id),
+            "components/Footer.tsx": get_footer_code(blueprint, task_id=task_id),
+            "components/Placeholder.tsx": get_placeholder_code(task_id=task_id)
         }
         
-        # Write static files and check for errors
         for path, content in files_to_write.items():
             result = file_writer.write_file(site_path / path, content)
             if not result.success:
                 raise Exception(f"Failed to write {path}: {result.error}")
 
-        # Generate and write dynamic components - PASS task_id
         unique_components = {
             component.component_name 
             for page in blueprint.pages 
@@ -182,17 +178,15 @@ export default config;
         }
         
         for name in unique_components:
-            code = get_component_code(name, blueprint, task_id=self.request.id)
+            code = get_component_code(name, blueprint, task_id=task_id)
             result = file_writer.write_file(site_path / "components" / f"{name}.tsx", code)
             if not result.success:
                 raise Exception(f"Failed to write component {name}.tsx: {result.error}")
 
-        # Generate and write dynamic page - PASS task_id
         component_dir = site_path / "components"
         actual_component_filenames = os.listdir(component_dir) if component_dir.exists() else []
-        page_tsx_code = get_dynamic_page_code(blueprint, actual_component_filenames, task_id=self.request.id)
+        page_tsx_code = get_dynamic_page_code(blueprint, actual_component_filenames, task_id=task_id)
 
-        # HACK: Force-correct the PageProps interface and params handling due to a persistent LLM generation issue.
         faulty_interface = "interface PageProps {\n  params: Promise<{ slug?: string[] }>;\n}"
         correct_interface = "interface PageProps {\n  params: { slug?: string[] };\n}"
         page_tsx_code = page_tsx_code.replace(faulty_interface, correct_interface)
@@ -205,7 +199,6 @@ export default config;
         if not result.success:
             raise Exception(f"Failed to write dynamic page: {result.error}")
         
-        # Save the blueprint.json and log file writing summary
         blueprint_path = site_path / "blueprint.json"
         blueprint_content = blueprint.model_dump_json(by_alias=True, indent=2)
         result = file_writer.write_file(blueprint_path, blueprint_content)
@@ -213,14 +206,12 @@ export default config;
             raise Exception(f"Failed to write blueprint.json: {result.error}")
         file_writer.log_final_summary()
 
-        # PHASE 3/5: Installing Dependencies
         logger.info("PHASE 3/5: Installing Dependencies...")
-        deployer.install_dependencies(site_path, task_id=self.request.id)
+        deployer.install_dependencies(site_path, task_id=task_id)
 
-        # PHASE 4/5 & 5/5 are handled within build_and_deploy
         if deploy:
             email = email or os.getenv("DEPLOY_EMAIL", "admin@example.com")
-            deployer.build_and_deploy(site_path, domain, email, task_id=self.request.id)
+            deployer.build_and_deploy(site_path, domain, email, task_id=task_id)
 
         result = {"status": "ok", "site_path": str(site_path)}
         logger.info("✅ Full website creation task finished successfully.")
@@ -229,3 +220,20 @@ export default config;
     except Exception as e:
         logger.exception("💥 Task failed.", extra={"error": str(e)})
         raise
+
+@app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
+def create_website_task(
+    self, brief: str, company: str | None = None, domain: str | None = None, model: str = "gemini",
+    force: bool = False, deploy: bool = True, email: str | None = None,
+):
+    """Celery task wrapper for creating a website."""
+    return create_website_task_func(
+        brief=brief,
+        company=company,
+        domain=domain,
+        model=model,
+        force=force,
+        deploy=deploy,
+        email=email,
+        task_id=self.request.id,
+    )
