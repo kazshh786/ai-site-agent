@@ -9,8 +9,8 @@ from celery import Celery
 from celery.signals import after_setup_logger
 from celery.utils.log import get_task_logger
 
-# Assuming your new FileWriter is in this module
 from agent.file_writer import FileWriter
+from agent.schemas import SiteBlueprint
 from logger import start_trace, set_trace_context
 
 logger = get_task_logger(__name__)
@@ -38,11 +38,13 @@ def _imports():
     )
     from agent.deployer import Deployer
     from agent.image_service import get_images_from_pexels as fetch_images
+    from agent.utils import sanitize_component_name
     return (
         get_site_blueprint, get_component_code, get_layout_code,
         get_globals_css_code, get_header_code,
         get_footer_code, get_placeholder_code, get_dynamic_page_code,
-        Deployer, fetch_images
+        Deployer, fetch_images,
+        sanitize_component_name
     )
 
 def create_website_task_func(
@@ -69,7 +71,8 @@ def create_website_task_func(
             get_site_blueprint, get_component_code, get_layout_code,
             get_globals_css_code, get_header_code,
             get_footer_code, get_placeholder_code, get_dynamic_page_code,
-            Deployer, fetch_images
+            Deployer, fetch_images,
+            sanitize_component_name
         ) = _imports()
 
         # PHASE 1/5: Generating Site Blueprint
@@ -77,6 +80,12 @@ def create_website_task_func(
         blueprint = get_site_blueprint(company, brief, task_id=task_id)
         if blueprint is None:
             raise ValueError("Blueprint generation failed or returned an invalid structure.")
+
+        # Sanitize component names in the blueprint
+        for page in blueprint.pages:
+            for section in page.sections:
+                for component in section.components:
+                    component.component_name = sanitize_component_name(component.component_name)
 
         try:
             imgs = fetch_images(brief, task_id=task_id)
