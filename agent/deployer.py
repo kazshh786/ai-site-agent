@@ -87,7 +87,7 @@ class Deployer:
             if package_json_path.exists():
                 with open(package_json_path, "r+") as f:
                     data = json.load(f)
-                    data["scripts"]["build"] = "prettier --write . && next lint --fix && next build"
+                    data["scripts"]["build"] = "next lint --fix && next build"
                     f.seek(0)
                     json.dump(data, f, indent=2)
                     f.truncate()
@@ -124,8 +124,7 @@ class Deployer:
             eslintrc_path = site_path / ".eslintrc.json"
             eslintrc_content = {
                 "extends": [
-                    "next/core-web-vitals",
-                    "prettier"
+                    "next/core-web-vitals"
                 ],
                 "parser": "@typescript-eslint/parser",
                 "plugins": [
@@ -148,18 +147,6 @@ class Deployer:
             with open(eslintrc_path, "w") as f:
                 json.dump(eslintrc_content, f, indent=2)
             DeployerLogger.log_info("project.configure.eslint_custom", "Created comprehensive .eslintrc.json with JSX parser config.")
-
-            # Create .prettierrc.json for code formatting
-            prettierrc_path = site_path / ".prettierrc.json"
-            prettierrc_content = {
-                "semi": True,
-                "tabWidth": 2,
-                "singleQuote": True,
-                "trailingComma": "es5",
-            }
-            with open(prettierrc_path, "w") as f:
-                json.dump(prettierrc_content, f, indent=2)
-            DeployerLogger.log_info("project.configure.prettierrc", "Created .prettierrc.json for code formatting.")
 
             # Create next.config.ts with standalone output
             next_config_path = site_path / "next.config.ts"
@@ -204,9 +191,7 @@ module.exports = nextConfig;
                         "@typescript-eslint/eslint-plugin": "^8.0.0",
                         "@typescript-eslint/parser": "^8.0.0",
                         "@types/react": "^18.3.12",
-                        "@types/react-dom": "^18.3.1",
-                        "prettier": "^3.3.3",
-                        "eslint-config-prettier": "^9.1.0"
+                        "@types/react-dom": "^18.3.1"
                     })
 
                     f.seek(0)
